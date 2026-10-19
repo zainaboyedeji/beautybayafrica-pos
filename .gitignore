@@ -1,0 +1,11 @@
+node_modules
+.turbo
+.next
+out
+dist
+target
+.env*
+.DS_Store
+
+# Saved sales contain customer details
+apps/sync-api/data/
