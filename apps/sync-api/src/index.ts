@@ -158,7 +158,7 @@ const inventory = (): Inventory[] =>
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Content-Type");
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -176,35 +176,53 @@ app.get("/products", (_req, res) => {
   res.json(products);
 });
 
-app.post("/products", (req, res) => {
-  const sku = String(req.body?.sku ?? "").trim();
-  const name = String(req.body?.name ?? "").trim();
-  const price = Number(req.body?.price);
-  const quantity = Number(req.body?.quantity);
-  const rawCost = req.body?.costPrice;
+type ProductInput = Omit<Product, "id"> & { quantity: number };
+
+// Validates a product sent by the add / edit forms. Returns an error message
+// when the input is invalid.
+const readProductInput = (body: any): ProductInput | string => {
+  const sku = String(body?.sku ?? "").trim();
+  const name = String(body?.name ?? "").trim();
+  const price = Number(body?.price);
+  const quantity = Number(body?.quantity);
+  const rawCost = body?.costPrice;
   const hasCost = rawCost !== undefined && rawCost !== null && rawCost !== "";
   const costPrice = Number(rawCost);
 
-  if (!sku || !name) {
-    res.status(400).json({ error: "SKU and name are required" });
-    return;
-  }
-  if (!(price >= 0) || !Number.isInteger(quantity) || quantity < 0) {
-    res
-      .status(400)
-      .json({ error: "Price and quantity must be valid, non-negative numbers" });
-    return;
-  }
-  if (hasCost && !(costPrice >= 0)) {
-    res.status(400).json({ error: "Cost price must be a valid number" });
-    return;
-  }
-  const barcode = String(req.body?.barcode ?? "").trim();
-  const imageUrl = String(req.body?.imageUrl ?? "").trim();
-  if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/")) {
-    res.status(400).json({
-      error: "Image link must start with https://res.cloudinary.com/",
-    });
+  if (!sku || !name) return "SKU and name are required";
+  if (!(price >= 0) || !Number.isInteger(quantity) || quantity < 0)
+    return "Price and quantity must be valid, non-negative numbers";
+  if (hasCost && !(costPrice >= 0)) return "Cost price must be a valid number";
+  const barcode = String(body?.barcode ?? "").trim();
+  const imageUrl = String(body?.imageUrl ?? "").trim();
+  if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/"))
+    return "Image link must start with https://res.cloudinary.com/";
+
+  return {
+    sku,
+    name,
+    price,
+    quantity,
+    ...(hasCost ? { costPrice } : {}),
+    ...(barcode ? { barcode } : {}),
+    ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
+  };
+};
+
+// SKUs and barcodes must be unique; `exceptId` is the product being edited.
+const findConflict = (input: ProductInput, exceptId?: string) => {
+  const others = products.filter((p) => p.id !== exceptId);
+  if (others.some((p) => p.sku === input.sku))
+    return `A product with SKU ${input.sku} already exists`;
+  if (input.barcode && others.some((p) => p.barcode === input.barcode))
+    return `A product with barcode ${input.barcode} already exists`;
+  return null;
+};
+
+app.post("/products", (req, res) => {
+  const input = readProductInput(req.body);
+  if (typeof input === "string") {
+    res.status(400).json({ error: input });
     return;
   }
 
@@ -214,30 +232,47 @@ app.post("/products", (req, res) => {
     stock.clear();
     usingSampleData = false;
   }
-  if (products.some((p) => p.sku === sku)) {
-    res.status(409).json({ error: `A product with SKU ${sku} already exists` });
-    return;
-  }
-  if (barcode && products.some((p) => p.barcode === barcode)) {
-    res
-      .status(409)
-      .json({ error: `A product with barcode ${barcode} already exists` });
+  const conflict = findConflict(input);
+  if (conflict) {
+    res.status(409).json({ error: conflict });
     return;
   }
 
-  const product: Product = {
-    id: randomUUID(),
-    sku,
-    name,
-    price,
-    ...(hasCost ? { costPrice } : {}),
-    ...(barcode ? { barcode } : {}),
-    ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
-  };
+  const { quantity, ...fields } = input;
+  const product: Product = { id: randomUUID(), ...fields };
   products.push(product);
   stock.set(product.id, quantity);
   saveCatalog();
   res.status(201).json(product);
+});
+
+app.put("/products/:id", (req, res) => {
+  const index = products.findIndex((p) => p.id === req.params.id);
+  if (index === -1) {
+    res.status(404).json({ error: "Product not found" });
+    return;
+  }
+  const input = readProductInput(req.body);
+  if (typeof input === "string") {
+    res.status(400).json({ error: input });
+    return;
+  }
+  const conflict = findConflict(input, req.params.id);
+  if (conflict) {
+    res.status(409).json({ error: conflict });
+    return;
+  }
+
+  // Past orders keep their own copy of the name and prices, so they are
+  // unaffected. Optional fields left empty are removed.
+  const { quantity, ...fields } = input;
+  const product: Product = { id: req.params.id, ...fields };
+  products[index] = product;
+  stock.set(product.id, quantity);
+  // Editing a sample product means the admin is keeping it, so start saving.
+  usingSampleData = false;
+  saveCatalog();
+  res.json(product);
 });
 
 app.get("/inventory", (_req, res) => {

@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import type { Product } from "@pos/types";
 import ActionModals, {
   Notice,
   type ActionModal,
 } from "../../components/action-modals";
+import AddProductForm from "../../components/add-product-form";
+import Modal from "../../components/modal";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
 import {
   API_URL,
@@ -32,6 +35,7 @@ export default function InventoryPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Product | null>(null);
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -81,6 +85,20 @@ export default function InventoryPage() {
           void catalog.reload();
         }}
       />
+      {editing && (
+        <Modal title="Edit product" onClose={() => setEditing(null)}>
+          <AddProductForm
+            product={editing}
+            quantity={catalog.data?.stock[editing.id] ?? 0}
+            onCancel={() => setEditing(null)}
+            onSaved={(message) => {
+              setEditing(null);
+              setNotice(message);
+              void catalog.reload();
+            }}
+          />
+        </Modal>
+      )}
 
       <div className="mt-6">
         <section className="rounded-lg bg-white p-5 shadow-sm">
@@ -167,6 +185,7 @@ export default function InventoryPage() {
                 <th className="px-4 py-3 text-right">Price</th>
                 <th className="px-4 py-3 text-right">Margin</th>
                 <th className="px-4 py-3 text-right">In stock</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -204,6 +223,14 @@ export default function InventoryPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {catalog.data?.stock[p.id] ?? 0}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => setEditing(p)}
+                      className="font-medium text-emerald-700 hover:underline"
+                    >
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}

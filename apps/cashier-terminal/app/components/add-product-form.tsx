@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { Product } from "@pos/types";
 import { API_URL, describeError } from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
@@ -21,13 +22,41 @@ const FIELDS = [
   { key: "costPrice", label: "Cost price", type: "number", required: false },
   { key: "price", label: "Selling price", type: "number", required: true },
   { key: "quantity", label: "Quantity", type: "number", required: true },
-  { key: "imageUrl", label: "Cloudinary image link", type: "url", required: false },
+  {
+    key: "imageUrl",
+    label: "Cloudinary image link",
+    type: "url",
+    required: false,
+  },
 ] as const;
 
-type Props = { onSaved: (message: string) => void; onCancel: () => void };
+type Props = {
+  onSaved: (message: string) => void;
+  onCancel: () => void;
+  /** When given, the form edits this product instead of adding a new one. */
+  product?: Product;
+  quantity?: number;
+};
 
-export default function AddProductForm({ onSaved, onCancel }: Props) {
-  const [form, setForm] = useState(EMPTY_FORM);
+export default function AddProductForm({
+  onSaved,
+  onCancel,
+  product,
+  quantity,
+}: Props) {
+  const [form, setForm] = useState(
+    product
+      ? {
+          sku: product.sku,
+          barcode: product.barcode ?? "",
+          name: product.name,
+          costPrice: product.costPrice?.toString() ?? "",
+          price: product.price.toString(),
+          quantity: (quantity ?? 0).toString(),
+          imageUrl: product.imageUrl ?? "",
+        }
+      : EMPTY_FORM,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,30 +64,33 @@ export default function AddProductForm({ onSaved, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/products`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sku: form.sku,
-          name: form.name,
-          price: Number(form.price),
-          quantity: Number(form.quantity),
-          ...(form.barcode.trim() !== ""
-            ? { barcode: form.barcode.trim() }
-            : {}),
-          ...(form.costPrice !== ""
-            ? { costPrice: Number(form.costPrice) }
-            : {}),
-          ...(form.imageUrl.trim() !== ""
-            ? { imageUrl: form.imageUrl.trim() }
-            : {}),
-        }),
-      });
+      const res = await fetch(
+        product ? `${API_URL}/products/${product.id}` : `${API_URL}/products`,
+        {
+          method: product ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sku: form.sku,
+            name: form.name,
+            price: Number(form.price),
+            quantity: Number(form.quantity),
+            ...(form.barcode.trim() !== ""
+              ? { barcode: form.barcode.trim() }
+              : {}),
+            ...(form.costPrice !== ""
+              ? { costPrice: Number(form.costPrice) }
+              : {}),
+            ...(form.imageUrl.trim() !== ""
+              ? { imageUrl: form.imageUrl.trim() }
+              : {}),
+          }),
+        },
+      );
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not add product");
-      onSaved(`${body.name} added.`);
+      if (!res.ok) throw new Error(body.error ?? "Could not save product");
+      onSaved(`${body.name} ${product ? "updated" : "added"}.`);
     } catch (e) {
-      setError(describeError(e, "Could not add product"));
+      setError(describeError(e, "Could not save product"));
       setSaving(false);
     }
   };
@@ -138,7 +170,7 @@ export default function AddProductForm({ onSaved, onCancel }: Props) {
           Cancel
         </button>
         <button type="submit" disabled={saving} className={PRIMARY_BUTTON}>
-          {saving ? "Saving…" : "Add product"}
+          {saving ? "Saving…" : product ? "Save changes" : "Add product"}
         </button>
       </div>
     </form>
