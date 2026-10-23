@@ -1,7 +1,7 @@
 # Render Blueprint for the sync API. In Render: New → Blueprint → pick this repo.
 services:
   - type: web
-    name: pos-sync-api
+    name: beautybayafrica-pos
     runtime: node
     # Same area as the Neon database (aws-eu-central-1), so queries stay fast.
     region: frankfurt

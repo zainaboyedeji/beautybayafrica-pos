@@ -228,6 +228,11 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "5mb" }));
 
+// Opening the server's address in a browser shows this instead of an error.
+app.get("/", (_req, res) => {
+  res.json({ service: "POS sync API", status: "ok" });
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
