@@ -39,3 +39,47 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+
+  # The website: the cashier terminal screens, built as static files.
+  - type: web
+    name: beautybayafrica-pos-app
+    runtime: static
+    branch: main
+    buildCommand: >-
+      corepack pnpm install --frozen-lockfile --filter cashier-terminal... &&
+      corepack pnpm --filter cashier-terminal... run build
+    staticPublishPath: apps/cashier-terminal/out
+    buildFilter:
+      paths:
+        - apps/cashier-terminal/**
+        - packages/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+    # Each page is exported as <page>.html; serve it at its plain address.
+    routes:
+      - type: rewrite
+        source: /login
+        destination: /login.html
+      - type: rewrite
+        source: /pos
+        destination: /pos.html
+      - type: rewrite
+        source: /inventory
+        destination: /inventory.html
+      - type: rewrite
+        source: /sales
+        destination: /sales.html
+      - type: rewrite
+        source: /customers
+        destination: /customers.html
+      - type: rewrite
+        source: /cashiers
+        destination: /cashiers.html
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # The server the website talks to; baked in when the site is built.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://beautybayafrica-pos.onrender.com
