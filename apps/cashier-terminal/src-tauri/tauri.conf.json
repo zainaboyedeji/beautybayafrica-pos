@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "cashier-terminal",
+  "productName": "BeautyBay Africa POS",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.beautybayafrica.pos",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -12,11 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "POS Cashier Terminal",
-        "width": 800,
-        "height": 600,
+        "title": "BeautyBay Africa POS",
+        "width": 1280,
+        "height": 800,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "maximized": true
       }
     ],
     "security": {

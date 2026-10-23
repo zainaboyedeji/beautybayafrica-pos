@@ -1,0 +1,55 @@
+# Builds the Windows installer for the desktop app and attaches it to a
+# GitHub Release. Run it from the Actions tab ("Run workflow"), or push a tag
+# such as v0.1.1.
+name: Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  # Needed to create the release and upload the installer to it.
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      # The live server the desktop app talks to; baked in at build time.
+      NEXT_PUBLIC_API_URL: https://beautybayafrica-pos.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # pnpm, at the version pinned in package.json's packageManager field.
+      - run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/cashier-terminal/src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile --filter cashier-terminal...
+
+      # The app imports types from this package, so build it first.
+      - run: pnpm --filter @pos/types run build
+
+      # Builds the website (beforeBuildCommand), then the .exe and .msi.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/cashier-terminal
+          tauriScript: pnpm tauri
+          tagName: app-v__VERSION__
+          releaseName: BeautyBay Africa POS v__VERSION__
+          releaseBody: >-
+            Windows installer for BeautyBay Africa POS. Download the
+            `-setup.exe` file below and run it.
+          releaseDraft: false
