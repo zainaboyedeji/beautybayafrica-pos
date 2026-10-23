@@ -4,10 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.beautybayafrica.pos",
   "build": {
-    "frontendDist": "../out",
+    "frontendDist": "https://beautybayafrica-pos-app.onrender.com",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeDevCommand": "pnpm dev"
   },
   "app": {
     "windows": [

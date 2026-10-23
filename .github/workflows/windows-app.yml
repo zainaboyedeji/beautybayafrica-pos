@@ -16,9 +16,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      # The live server the desktop app talks to; baked in at build time.
-      NEXT_PUBLIC_API_URL: https://beautybayafrica-pos.onrender.com
     steps:
       - uses: actions/checkout@v4
 
@@ -35,12 +32,11 @@ jobs:
         with:
           workspaces: apps/cashier-terminal/src-tauri -> target
 
-      - run: pnpm install --frozen-lockfile --filter cashier-terminal...
+      # Only the Tauri command-line tool is needed: the app opens the live
+      # website, so no screens are built into it.
+      - run: pnpm install --frozen-lockfile --filter cashier-terminal
 
-      # The app imports types from this package, so build it first.
-      - run: pnpm --filter @pos/types run build
-
-      # Builds the website (beforeBuildCommand), then the .exe and .msi.
+      # Builds the .exe and .msi.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
