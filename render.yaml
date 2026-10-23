@@ -1,0 +1,41 @@
+# Render Blueprint for the sync API. In Render: New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: pos-sync-api
+    runtime: node
+    # Same area as the Neon database (aws-eu-central-1), so queries stay fast.
+    region: frankfurt
+    plan: free
+    branch: main
+    # Installs and builds only the API and the shared types it uses.
+    buildCommand: >-
+      corepack pnpm install --frozen-lockfile --filter sync-api... &&
+      corepack pnpm --filter sync-api... run build
+    # Applies any new database migrations, then starts the server.
+    startCommand: cd apps/sync-api && node dist/migrate.js && node dist/index.js
+    healthCheckPath: /health
+    # Only redeploy when the API or its shared code changes.
+    buildFilter:
+      paths:
+        - apps/sync-api/**
+        - packages/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Render sits in front of the server as a proxy.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SESSION_SECRET
+        generateValue: true
+      # Asked for when the Blueprint is created. Copy the two database values
+      # from the repo root's .env.local (written by `neon deploy`).
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
