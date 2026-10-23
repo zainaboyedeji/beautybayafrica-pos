@@ -1,3 +1,4 @@
+import { db, transaction } from "./db";
 import express from "express";
 import {
   createHmac,
@@ -6,8 +7,6 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import type {
   CloudinaryUrl,
   Customer,
@@ -18,9 +17,6 @@ import type {
   Product,
 } from "@pos/types";
 
-// Settings such as ADMIN_PASSWORD can live in a local .env file.
-if (existsSync(".env")) process.loadEnvFile(".env");
-
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
@@ -28,48 +24,52 @@ const port = Number(process.env.PORT ?? 4000);
 // are counted per visitor rather than for the proxy as a whole.
 if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
 
-// Orders, products and stock are kept in local JSON files so they survive
-// restarts. Replace with a real database before going live.
-const dataDir = path.resolve(process.env.DATA_DIR ?? "data");
-const catalogFile = path.join(dataDir, "catalog.json");
+// An error with the HTTP status to answer with, for use inside transactions.
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
-// Sample data, used only until a real inventory file is imported.
-const sampleProducts: Product[] = [
-  { id: "p1", sku: "BEV-001", name: "Bottled Water 75cl", price: 1.5 },
-  { id: "p2", sku: "BEV-002", name: "Orange Juice 1L", price: 3.2 },
-  { id: "p3", sku: "BEV-003", name: "Cola Can 33cl", price: 1.2 },
-  { id: "p4", sku: "SNK-001", name: "Potato Chips", price: 2.0 },
-  { id: "p5", sku: "SNK-002", name: "Chocolate Bar", price: 1.8 },
-  { id: "p6", sku: "SNK-003", name: "Salted Peanuts", price: 2.5 },
-  { id: "p7", sku: "GRO-001", name: "White Bread Loaf", price: 2.7 },
-  { id: "p8", sku: "GRO-002", name: "Milk 1L", price: 1.9 },
-  { id: "p9", sku: "GRO-003", name: "Eggs (12)", price: 4.5 },
-  { id: "p10", sku: "GRO-004", name: "Rice 1kg", price: 3.8 },
-  { id: "p11", sku: "HOM-001", name: "Dish Soap", price: 2.9 },
-  { id: "p12", sku: "HOM-002", name: "Toilet Paper (4)", price: 3.5 },
-];
+// --- Database rows ---------------------------------------------------------
 
-type CatalogEntry = Product & { quantity: number };
-
-let usingSampleData = !existsSync(catalogFile);
-const savedCatalog: CatalogEntry[] = usingSampleData
-  ? sampleProducts.map((p) => ({ ...p, quantity: 25 }))
-  : JSON.parse(readFileSync(catalogFile, "utf8"));
-
-const products: Product[] = savedCatalog.map(({ quantity: _q, ...p }) => p);
-const stock = new Map<string, number>(
-  savedCatalog.map((entry) => [entry.id, entry.quantity]),
-);
-
-const saveCatalog = () => {
-  if (usingSampleData) return;
-  const catalog: CatalogEntry[] = products.map((p) => ({
-    ...p,
-    quantity: stock.get(p.id) ?? 0,
-  }));
-  mkdirSync(dataDir, { recursive: true });
-  writeFileSync(catalogFile, JSON.stringify(catalog, null, 2));
+type ProductRow = {
+  id: string;
+  sku: string;
+  name: string;
+  price: number;
+  cost_price: number | null;
+  barcode: string | null;
+  image_url: string | null;
+  quantity: number;
+  updated_at: Date;
 };
+
+const toProduct = (row: ProductRow): Product => ({
+  id: row.id,
+  sku: row.sku,
+  name: row.name,
+  price: row.price,
+  ...(row.cost_price !== null ? { costPrice: row.cost_price } : {}),
+  ...(row.barcode !== null ? { barcode: row.barcode } : {}),
+  ...(row.image_url !== null
+    ? { imageUrl: row.image_url as CloudinaryUrl }
+    : {}),
+});
+
+type CustomerRow = { name: string; phone: string; email: string | null };
+
+const toCustomer = (row: CustomerRow): Customer => ({
+  name: row.name,
+  phone: row.phone,
+  ...(row.email !== null ? { email: row.email } : {}),
+});
+
+// Customers are matched by phone number (ignoring spaces).
+const phoneKey = (phone: string) => phone.replace(/\s+/g, "");
 
 // --- CSV inventory import -------------------------------------------------
 
@@ -90,7 +90,7 @@ const parseCsv = (text: string): string[][] => {
   let row: string[] = [];
   let field = "";
   let quoted = false;
-  const input = text.replace(/^\uFEFF/, "");
+  const input = text.replace(/^﻿/, "");
   for (let i = 0; i < input.length; i++) {
     const c = input[i];
     if (quoted) {
@@ -123,50 +123,13 @@ const parseNumber = (value: string) => {
   return digits === "" ? NaN : Number(digits);
 };
 
-const ordersFile = path.join(dataDir, "orders.json");
-const orders: Order[] = existsSync(ordersFile)
-  ? JSON.parse(readFileSync(ordersFile, "utf8"))
-  : [];
-
-const saveOrders = () => {
-  mkdirSync(dataDir, { recursive: true });
-  writeFileSync(ordersFile, JSON.stringify(orders, null, 2));
-};
-
-// Customers are matched by phone number (ignoring spaces).
-const customersFile = path.join(dataDir, "customers.json");
-const customers: Customer[] = existsSync(customersFile)
-  ? JSON.parse(readFileSync(customersFile, "utf8"))
-  : [];
-
-const phoneKey = (phone: string) => phone.replace(/\s+/g, "");
-const findCustomer = (phone: string) =>
-  customers.find((c) => phoneKey(c.phone) === phoneKey(phone));
-
-const saveCustomers = () => {
-  mkdirSync(dataDir, { recursive: true });
-  writeFileSync(customersFile, JSON.stringify(customers, null, 2));
-};
-
-const upsertCustomer = (customer: Customer) => {
-  const existing = findCustomer(customer.phone);
-  if (existing) Object.assign(existing, customer);
-  else customers.push({ ...customer });
-  saveCustomers();
-};
-
-// Customers from sales made before the customer list existed.
-for (const order of orders) {
-  if (!findCustomer(order.customer.phone)) customers.push({ ...order.customer });
-}
-
 // --- Login -----------------------------------------------------------------
 
 // The admin logs in with ADMIN_PASSWORD; cashiers log in with a PIN the admin
 // gives them. Cashiers can only see products and make sales.
 type Role = "admin" | "cashier";
 type Session = { role: Role; name: string; cashierId?: string; exp: number };
-type Cashier = { id: string; name: string; salt: string; pinHash: string };
+type Cashier = { id: string; name: string; salt: string; pin_hash: string };
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 if (!ADMIN_PASSWORD) {
@@ -177,15 +140,8 @@ const SESSION_SECRET =
   process.env.SESSION_SECRET ?? randomBytes(32).toString("hex");
 const SESSION_HOURS = 12;
 
-const cashiersFile = path.join(dataDir, "cashiers.json");
-const cashiers: Cashier[] = existsSync(cashiersFile)
-  ? JSON.parse(readFileSync(cashiersFile, "utf8"))
-  : [];
-
-const saveCashiers = () => {
-  mkdirSync(dataDir, { recursive: true });
-  writeFileSync(cashiersFile, JSON.stringify(cashiers, null, 2));
-};
+const fetchCashiers = async () =>
+  (await db.query<Cashier>("SELECT * FROM cashiers ORDER BY created_at")).rows;
 
 const hashPin = (pin: string, salt: string) =>
   scryptSync(pin, salt, 32).toString("hex");
@@ -193,7 +149,7 @@ const hashPin = (pin: string, salt: string) =>
 const pinMatches = (cashier: Cashier, pin: string) =>
   timingSafeEqual(
     Buffer.from(hashPin(pin, cashier.salt), "hex"),
-    Buffer.from(cashier.pinHash, "hex"),
+    Buffer.from(cashier.pin_hash, "hex"),
   );
 
 // Compares hashes so the check takes the same time whatever was typed.
@@ -214,7 +170,7 @@ const createToken = (session: Omit<Session, "exp">) => {
   return `${payload}.${sign(payload)}`;
 };
 
-const readToken = (header: string | undefined): Session | null => {
+const readToken = async (header: string | undefined): Promise<Session | null> => {
   const [payload, signature] = (header ?? "").replace(/^Bearer /, "").split(".");
   if (!payload || !signature) return null;
   const expected = Buffer.from(sign(payload));
@@ -226,15 +182,19 @@ const readToken = (header: string | undefined): Session | null => {
   );
   if (session.exp < Date.now()) return null;
   // A removed cashier is logged out straight away.
-  if (session.role === "cashier" && !cashiers.some((c) => c.id === session.cashierId))
-    return null;
+  if (session.role === "cashier") {
+    const { rowCount } = await db.query("SELECT 1 FROM cashiers WHERE id = $1", [
+      session.cashierId,
+    ]);
+    if (!rowCount) return null;
+  }
   return session;
 };
 
 const requireRole =
   (...roles: Role[]): express.RequestHandler =>
-  (req, res, next) => {
-    const session = readToken(req.header("authorization"));
+  async (req, res, next) => {
+    const session = await readToken(req.header("authorization"));
     if (!session) {
       res.status(401).json({ error: "Please log in" });
       return;
@@ -254,13 +214,6 @@ const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_MINUTES = 15;
 const failedLogins = new Map<string, { count: number; until: number }>();
 
-const inventory = (): Inventory[] =>
-  products.map((p) => ({
-    productId: p.id,
-    quantity: stock.get(p.id) ?? 0,
-    updatedAt: new Date().toISOString(),
-  }));
-
 // The cashier terminal runs on another origin (localhost:3000 / tauri://localhost).
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -279,7 +232,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/auth/login", (req, res) => {
+app.post("/auth/login", async (req, res) => {
   const key = req.ip ?? "unknown";
   const failed = failedLogins.get(key);
   if (failed && failed.count >= MAX_FAILED_LOGINS && failed.until > Date.now()) {
@@ -295,7 +248,7 @@ app.post("/auth/login", (req, res) => {
   if (password && passwordMatches(password)) {
     session = { role: "admin", name: "Admin" };
   } else if (pin) {
-    const cashier = cashiers.find((c) => pinMatches(c, pin));
+    const cashier = (await fetchCashiers()).find((c) => pinMatches(c, pin));
     if (cashier)
       session = { role: "cashier", name: cashier.name, cashierId: cashier.id };
   }
@@ -315,11 +268,11 @@ app.post("/auth/login", (req, res) => {
   res.json({ token: createToken(session), role: session.role, name: session.name });
 });
 
-app.get("/cashiers", adminOnly, (_req, res) => {
-  res.json(cashiers.map(({ id, name }) => ({ id, name })));
+app.get("/cashiers", adminOnly, async (_req, res) => {
+  res.json((await fetchCashiers()).map(({ id, name }) => ({ id, name })));
 });
 
-app.post("/cashiers", adminOnly, (req, res) => {
+app.post("/cashiers", adminOnly, async (req, res) => {
   const name = String(req.body?.name ?? "").trim();
   const pin = String(req.body?.pin ?? "").trim();
   if (!name) {
@@ -331,35 +284,35 @@ app.post("/cashiers", adminOnly, (req, res) => {
     return;
   }
   // Cashiers log in with the PIN alone, so each one must be different.
-  if (cashiers.some((c) => pinMatches(c, pin))) {
+  if ((await fetchCashiers()).some((c) => pinMatches(c, pin))) {
     res.status(409).json({ error: "Another cashier already uses that PIN" });
     return;
   }
   const salt = randomBytes(16).toString("hex");
-  const cashier: Cashier = {
-    id: randomUUID(),
-    name,
-    salt,
-    pinHash: hashPin(pin, salt),
-  };
-  cashiers.push(cashier);
-  saveCashiers();
-  res.status(201).json({ id: cashier.id, name: cashier.name });
+  const id = randomUUID();
+  await db.query(
+    "INSERT INTO cashiers (id, name, salt, pin_hash) VALUES ($1, $2, $3, $4)",
+    [id, name, salt, hashPin(pin, salt)],
+  );
+  res.status(201).json({ id, name });
 });
 
-app.delete("/cashiers/:id", adminOnly, (req, res) => {
-  const index = cashiers.findIndex((c) => c.id === req.params.id);
-  if (index === -1) {
+app.delete("/cashiers/:id", adminOnly, async (req, res) => {
+  const { rowCount } = await db.query("DELETE FROM cashiers WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!rowCount) {
     res.status(404).json({ error: "Cashier not found" });
     return;
   }
-  cashiers.splice(index, 1);
-  saveCashiers();
   res.sendStatus(204);
 });
 
-app.get("/products", anyone, (_req, res) => {
-  res.json(products);
+app.get("/products", anyone, async (_req, res) => {
+  const { rows } = await db.query<ProductRow>(
+    "SELECT * FROM products ORDER BY created_at",
+  );
+  res.json(rows.map(toProduct));
 });
 
 type ProductInput = Omit<Product, "id"> & { quantity: number };
@@ -396,55 +349,56 @@ const readProductInput = (body: any): ProductInput | string => {
 };
 
 // SKUs and barcodes must be unique; `exceptId` is the product being edited.
-const findConflict = (input: ProductInput, exceptId?: string) => {
-  const others = products.filter((p) => p.id !== exceptId);
-  if (others.some((p) => p.sku === input.sku))
+const findConflict = async (input: ProductInput, exceptId = "") => {
+  const { rows } = await db.query<{ sku: string; barcode: string | null }>(
+    "SELECT sku, barcode FROM products WHERE id <> $1 AND (sku = $2 OR barcode = $3)",
+    [exceptId, input.sku, input.barcode ?? null],
+  );
+  if (rows.some((p) => p.sku === input.sku))
     return `A product with SKU ${input.sku} already exists`;
-  if (input.barcode && others.some((p) => p.barcode === input.barcode))
+  if (rows.length > 0)
     return `A product with barcode ${input.barcode} already exists`;
   return null;
 };
 
-app.post("/products", adminOnly, (req, res) => {
+const productValues = (input: ProductInput) => [
+  input.sku,
+  input.name,
+  input.price,
+  input.costPrice ?? null,
+  input.barcode ?? null,
+  input.imageUrl ?? null,
+  input.quantity,
+];
+
+app.post("/products", adminOnly, async (req, res) => {
   const input = readProductInput(req.body);
   if (typeof input === "string") {
     res.status(400).json({ error: input });
     return;
   }
-
-  // The first real product replaces the sample products entirely.
-  if (usingSampleData) {
-    products.length = 0;
-    stock.clear();
-    usingSampleData = false;
-  }
-  const conflict = findConflict(input);
+  const conflict = await findConflict(input);
   if (conflict) {
     res.status(409).json({ error: conflict });
     return;
   }
 
-  const { quantity, ...fields } = input;
-  const product: Product = { id: randomUUID(), ...fields };
-  products.push(product);
-  stock.set(product.id, quantity);
-  saveCatalog();
-  res.status(201).json(product);
+  const { rows } = await db.query<ProductRow>(
+    `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [...productValues(input), randomUUID()],
+  );
+  res.status(201).json(toProduct(rows[0]));
 });
 
-app.put("/products/:id", adminOnly, (req, res) => {
+app.put("/products/:id", adminOnly, async (req, res) => {
   const id = String(req.params.id);
-  const index = products.findIndex((p) => p.id === id);
-  if (index === -1) {
-    res.status(404).json({ error: "Product not found" });
-    return;
-  }
   const input = readProductInput(req.body);
   if (typeof input === "string") {
     res.status(400).json({ error: input });
     return;
   }
-  const conflict = findConflict(input, id);
+  const conflict = await findConflict(input, id);
   if (conflict) {
     res.status(409).json({ error: conflict });
     return;
@@ -452,21 +406,35 @@ app.put("/products/:id", adminOnly, (req, res) => {
 
   // Past orders keep their own copy of the name and prices, so they are
   // unaffected. Optional fields left empty are removed.
-  const { quantity, ...fields } = input;
-  const product: Product = { id, ...fields };
-  products[index] = product;
-  stock.set(product.id, quantity);
-  // Editing a sample product means the admin is keeping it, so start saving.
-  usingSampleData = false;
-  saveCatalog();
-  res.json(product);
+  const { rows } = await db.query<ProductRow>(
+    `UPDATE products SET sku = $1, name = $2, price = $3, cost_price = $4,
+       barcode = $5, image_url = $6, quantity = $7, updated_at = now()
+     WHERE id = $8 RETURNING *`,
+    [...productValues(input), id],
+  );
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Product not found" });
+    return;
+  }
+  res.json(toProduct(rows[0]));
 });
 
-app.get("/inventory", anyone, (_req, res) => {
-  res.json(inventory());
+app.get("/inventory", anyone, async (_req, res) => {
+  const { rows } = await db.query<ProductRow>(
+    "SELECT id, quantity, updated_at FROM products ORDER BY created_at",
+  );
+  res.json(
+    rows.map(
+      (row): Inventory => ({
+        productId: row.id,
+        quantity: row.quantity,
+        updatedAt: row.updated_at.toISOString(),
+      }),
+    ),
+  );
 });
 
-app.post("/inventory/import", adminOnly, (req, res) => {
+app.post("/inventory/import", adminOnly, async (req, res) => {
   const rows = typeof req.body === "string" ? parseCsv(req.body) : [];
   if (rows.length < 2) {
     res.status(400).json({ error: "The file has no product rows" });
@@ -497,8 +465,17 @@ app.post("/inventory/import", adminOnly, (req, res) => {
     return;
   }
 
+  // Which product each barcode already belongs to.
+  const barcodeOwners = new Map(
+    (
+      await db.query<{ sku: string; barcode: string }>(
+        "SELECT sku, barcode FROM products WHERE barcode IS NOT NULL",
+      )
+    ).rows.map((p) => [p.barcode, p.sku]),
+  );
+
   const errors: { row: number; message: string }[] = [];
-  const valid: CatalogEntry[] = [];
+  const valid: ProductInput[] = [];
   const seen = new Set<string>();
   const seenBarcodes = new Set<string>();
   rows.slice(1).forEach((cells, index) => {
@@ -520,7 +497,8 @@ app.post("/inventory/import", adminOnly, (req, res) => {
     if (!name) return fail("Name is empty");
     if (barcode && seenBarcodes.has(barcode))
       return fail(`Barcode ${barcode} appears more than once`);
-    if (barcode && products.some((p) => p.barcode === barcode && p.sku !== sku))
+    const owner = barcodeOwners.get(barcode);
+    if (barcode && owner !== undefined && owner !== sku)
       return fail(`Barcode ${barcode} already belongs to another product`);
     if ((cells[cols.price] ?? "").trim() === "" || !(price >= 0))
       return fail("Price is not a valid number");
@@ -536,7 +514,6 @@ app.post("/inventory/import", adminOnly, (req, res) => {
     seen.add(sku);
     if (barcode) seenBarcodes.add(barcode);
     valid.push({
-      id: "",
       sku,
       name,
       price,
@@ -554,37 +531,49 @@ app.post("/inventory/import", adminOnly, (req, res) => {
     return;
   }
 
-  // The first real import replaces the sample products entirely.
-  if (usingSampleData) {
-    products.length = 0;
-    stock.clear();
-    usingSampleData = false;
-  }
-
-  let added = 0;
-  let updated = 0;
-  for (const { quantity, id: _id, ...fields } of valid) {
-    const existing = products.find((p) => p.sku === fields.sku);
-    if (existing) {
-      Object.assign(existing, fields);
-      stock.set(existing.id, quantity);
-      updated++;
-    } else {
-      const product: Product = { ...fields, id: randomUUID() };
-      products.push(product);
-      stock.set(product.id, quantity);
-      added++;
-    }
-  }
-  saveCatalog();
-  res.json({ added, updated, skipped: errors.length, errors });
+  // One statement for the whole file. Products are matched by SKU; columns
+  // missing from the file keep their current values.
+  const result = await db.query<{ inserted: boolean }>(
+    `INSERT INTO products (id, sku, name, price, cost_price, barcode, image_url, quantity)
+     SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::numeric[],
+                          $5::numeric[], $6::text[], $7::text[], $8::int[])
+     ON CONFLICT (sku) DO UPDATE SET
+       name = EXCLUDED.name,
+       price = EXCLUDED.price,
+       cost_price = COALESCE(EXCLUDED.cost_price, products.cost_price),
+       barcode = COALESCE(EXCLUDED.barcode, products.barcode),
+       image_url = COALESCE(EXCLUDED.image_url, products.image_url),
+       quantity = EXCLUDED.quantity,
+       updated_at = now()
+     RETURNING (xmax = 0) AS inserted`,
+    [
+      valid.map(() => randomUUID()),
+      valid.map((p) => p.sku),
+      valid.map((p) => p.name),
+      valid.map((p) => p.price),
+      valid.map((p) => p.costPrice ?? null),
+      valid.map((p) => p.barcode ?? null),
+      valid.map((p) => p.imageUrl ?? null),
+      valid.map((p) => p.quantity),
+    ],
+  );
+  const added = result.rows.filter((r) => r.inserted).length;
+  res.json({
+    added,
+    updated: result.rows.length - added,
+    skipped: errors.length,
+    errors,
+  });
 });
 
-app.get("/customers", adminOnly, (_req, res) => {
-  res.json(customers);
+app.get("/customers", adminOnly, async (_req, res) => {
+  const { rows } = await db.query<CustomerRow>(
+    "SELECT name, phone, email FROM customers ORDER BY created_at",
+  );
+  res.json(rows.map(toCustomer));
 });
 
-app.post("/customers", adminOnly, (req, res) => {
+app.post("/customers", adminOnly, async (req, res) => {
   const name = String(req.body?.name ?? "").trim();
   const phone = String(req.body?.phone ?? "").trim();
   const email = String(req.body?.email ?? "").trim();
@@ -592,23 +581,57 @@ app.post("/customers", adminOnly, (req, res) => {
     res.status(400).json({ error: "Customer name and phone are required" });
     return;
   }
-  if (findCustomer(phone)) {
+  const { rowCount } = await db.query(
+    `INSERT INTO customers (phone_key, name, phone, email) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (phone_key) DO NOTHING`,
+    [phoneKey(phone), name, phone, email || null],
+  );
+  if (!rowCount) {
     res
       .status(409)
       .json({ error: `A customer with phone ${phone} already exists` });
     return;
   }
   const customer: Customer = { name, phone, ...(email ? { email } : {}) };
-  customers.push(customer);
-  saveCustomers();
   res.status(201).json(customer);
 });
 
-app.get("/orders", adminOnly, (_req, res) => {
-  res.json(orders);
+app.get("/orders", adminOnly, async (_req, res) => {
+  const { rows } = await db.query<{
+    id: string;
+    total: number;
+    payment_method: PaymentMethod;
+    customer_name: string;
+    customer_phone: string;
+    customer_email: string | null;
+    created_at: Date;
+    items: OrderItem[];
+  }>(
+    `SELECT o.*, json_agg(json_strip_nulls(json_build_object(
+         'productId', i.product_id, 'name', i.name, 'quantity', i.quantity,
+         'unitPrice', i.unit_price, 'unitCost', i.unit_cost)) ORDER BY i.line) AS items
+     FROM orders o JOIN order_items i ON i.order_id = o.id
+     GROUP BY o.id ORDER BY o.created_at`,
+  );
+  res.json(
+    rows.map(
+      (row): Order => ({
+        id: row.id,
+        items: row.items,
+        total: row.total,
+        paymentMethod: row.payment_method,
+        customer: toCustomer({
+          name: row.customer_name,
+          phone: row.customer_phone,
+          email: row.customer_email,
+        }),
+        createdAt: row.created_at.toISOString(),
+      }),
+    ),
+  );
 });
 
-app.post("/orders", anyone, (req, res) => {
+app.post("/orders", anyone, async (req, res) => {
   const requested: unknown = req.body?.items;
   if (!Array.isArray(requested) || requested.length === 0) {
     res.status(400).json({ error: "Order must contain at least one item" });
@@ -640,49 +663,97 @@ app.post("/orders", anyone, (req, res) => {
     }
   }
 
-  const items: OrderItem[] = [];
-  for (const line of requested) {
-    const product = products.find((p) => p.id === line?.productId);
-    const quantity = Number(line?.quantity);
-    if (!product || !Number.isInteger(quantity) || quantity <= 0) {
-      res.status(400).json({ error: "Invalid order item" });
-      return;
+  // Taking the stock and saving the sale happen together, so two tills
+  // selling the last item at once can't both succeed.
+  const order = await transaction(async (client) => {
+    const items: OrderItem[] = [];
+    for (const line of requested) {
+      const productId = String(line?.productId ?? "");
+      const quantity = Number(line?.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0)
+        throw new HttpError(400, "Invalid order item");
+      const { rows } = await client.query<ProductRow>(
+        `UPDATE products SET quantity = quantity - $2, updated_at = now()
+         WHERE id = $1 AND quantity >= $2 RETURNING *`,
+        [productId, quantity],
+      );
+      if (rows.length === 0) {
+        const found = await client.query<{ name: string }>(
+          "SELECT name FROM products WHERE id = $1",
+          [productId],
+        );
+        throw found.rows.length
+          ? new HttpError(409, `Not enough stock for ${found.rows[0].name}`)
+          : new HttpError(400, "Invalid order item");
+      }
+      const product = rows[0];
+      items.push({
+        productId: product.id,
+        name: product.name,
+        quantity,
+        unitPrice: product.price,
+        ...(product.cost_price !== null ? { unitCost: product.cost_price } : {}),
+      });
     }
-    if ((stock.get(product.id) ?? 0) < quantity) {
-      res.status(409).json({ error: `Not enough stock for ${product.name}` });
-      return;
+
+    const total = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+    const order: Order = {
+      id: randomUUID(),
+      items,
+      total: Math.round(total * 100) / 100,
+      paymentMethod: paymentMethod satisfies PaymentMethod,
+      customer,
+      createdAt: createdAt.toISOString(),
+    };
+    await client.query(
+      `INSERT INTO orders (id, total, payment_method, customer_name, customer_phone, customer_email, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [order.id, order.total, paymentMethod, name, phone, email || null, createdAt],
+    );
+    for (const [line, item] of items.entries()) {
+      await client.query(
+        `INSERT INTO order_items (order_id, line, product_id, name, quantity, unit_price, unit_cost)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          order.id,
+          line,
+          item.productId,
+          item.name,
+          item.quantity,
+          item.unitPrice,
+          item.unitCost ?? null,
+        ],
+      );
     }
-    items.push({
-      productId: product.id,
-      name: product.name,
-      quantity,
-      unitPrice: product.price,
-      ...(product.costPrice !== undefined
-        ? { unitCost: product.costPrice }
-        : {}),
-    });
-  }
-
-  for (const item of items) {
-    stock.set(item.productId, (stock.get(item.productId) ?? 0) - item.quantity);
-  }
-
-  const total = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
-  const order: Order = {
-    id: randomUUID(),
-    items,
-    total: Math.round(total * 100) / 100,
-    paymentMethod: paymentMethod satisfies PaymentMethod,
-    customer,
-    createdAt: createdAt.toISOString(),
-  };
-  orders.push(order);
-  orders.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  upsertCustomer(customer);
-  saveOrders();
-  saveCatalog();
+    // Save the customer, keeping a known email if none was given this time.
+    await client.query(
+      `INSERT INTO customers (phone_key, name, phone, email) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (phone_key) DO UPDATE SET name = EXCLUDED.name,
+         phone = EXCLUDED.phone, email = COALESCE(EXCLUDED.email, customers.email)`,
+      [phoneKey(phone), name, phone, email || null],
+    );
+    return order;
+  });
   res.status(201).json(order);
 });
+
+const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
+  if (err instanceof HttpError) {
+    res.status(err.status).json({ error: err.message });
+  } else if (err?.code === "23505") {
+    // A unique column clashed, e.g. two people adding the same SKU at once.
+    res
+      .status(409)
+      .json({ error: "That SKU or barcode is already used by another product" });
+  } else if (typeof err?.status === "number" && err.status < 500) {
+    // Bad request bodies, such as invalid JSON.
+    res.status(err.status).json({ error: err.message });
+  } else {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong on the server" });
+  }
+};
+app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`sync-api listening on http://localhost:${port}`);

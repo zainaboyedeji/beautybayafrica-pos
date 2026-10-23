@@ -15,5 +15,9 @@
   "devDependencies": {
     "turbo": "^2.11.7",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@neon/config": "^1.9.3",
+    "@neon/env": "^1.6.4"
   }
 }

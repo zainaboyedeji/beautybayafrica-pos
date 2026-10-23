@@ -10,3 +10,4 @@ target
 # Saved sales contain customer details
 apps/sync-api/data/
 !.env.example
+.neon
