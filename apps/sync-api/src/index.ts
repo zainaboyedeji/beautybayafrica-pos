@@ -1,5 +1,11 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+import {
+  createHmac,
+  randomBytes,
+  randomUUID,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
@@ -12,8 +18,15 @@ import type {
   Product,
 } from "@pos/types";
 
+// Settings such as ADMIN_PASSWORD can live in a local .env file.
+if (existsSync(".env")) process.loadEnvFile(".env");
+
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
+
+// Behind a hosting proxy (e.g. Render), set TRUST_PROXY=1 so login attempts
+// are counted per visitor rather than for the proxy as a whole.
+if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
 
 // Orders, products and stock are kept in local JSON files so they survive
 // restarts. Replace with a real database before going live.
@@ -147,6 +160,100 @@ for (const order of orders) {
   if (!findCustomer(order.customer.phone)) customers.push({ ...order.customer });
 }
 
+// --- Login -----------------------------------------------------------------
+
+// The admin logs in with ADMIN_PASSWORD; cashiers log in with a PIN the admin
+// gives them. Cashiers can only see products and make sales.
+type Role = "admin" | "cashier";
+type Session = { role: Role; name: string; cashierId?: string; exp: number };
+type Cashier = { id: string; name: string; salt: string; pinHash: string };
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
+if (!ADMIN_PASSWORD) {
+  console.error("ADMIN_PASSWORD is not set, so the admin cannot log in.");
+}
+// Without a fixed SESSION_SECRET everyone is logged out when the server restarts.
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ?? randomBytes(32).toString("hex");
+const SESSION_HOURS = 12;
+
+const cashiersFile = path.join(dataDir, "cashiers.json");
+const cashiers: Cashier[] = existsSync(cashiersFile)
+  ? JSON.parse(readFileSync(cashiersFile, "utf8"))
+  : [];
+
+const saveCashiers = () => {
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(cashiersFile, JSON.stringify(cashiers, null, 2));
+};
+
+const hashPin = (pin: string, salt: string) =>
+  scryptSync(pin, salt, 32).toString("hex");
+
+const pinMatches = (cashier: Cashier, pin: string) =>
+  timingSafeEqual(
+    Buffer.from(hashPin(pin, cashier.salt), "hex"),
+    Buffer.from(cashier.pinHash, "hex"),
+  );
+
+// Compares hashes so the check takes the same time whatever was typed.
+const passwordMatches = (password: string) =>
+  ADMIN_PASSWORD !== "" &&
+  timingSafeEqual(
+    createHmac("sha256", SESSION_SECRET).update(password).digest(),
+    createHmac("sha256", SESSION_SECRET).update(ADMIN_PASSWORD).digest(),
+  );
+
+const sign = (payload: string) =>
+  createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
+
+const createToken = (session: Omit<Session, "exp">) => {
+  const payload = Buffer.from(
+    JSON.stringify({ ...session, exp: Date.now() + SESSION_HOURS * 3600_000 }),
+  ).toString("base64url");
+  return `${payload}.${sign(payload)}`;
+};
+
+const readToken = (header: string | undefined): Session | null => {
+  const [payload, signature] = (header ?? "").replace(/^Bearer /, "").split(".");
+  if (!payload || !signature) return null;
+  const expected = Buffer.from(sign(payload));
+  const given = Buffer.from(signature);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given))
+    return null;
+  const session: Session = JSON.parse(
+    Buffer.from(payload, "base64url").toString("utf8"),
+  );
+  if (session.exp < Date.now()) return null;
+  // A removed cashier is logged out straight away.
+  if (session.role === "cashier" && !cashiers.some((c) => c.id === session.cashierId))
+    return null;
+  return session;
+};
+
+const requireRole =
+  (...roles: Role[]): express.RequestHandler =>
+  (req, res, next) => {
+    const session = readToken(req.header("authorization"));
+    if (!session) {
+      res.status(401).json({ error: "Please log in" });
+      return;
+    }
+    if (!roles.includes(session.role)) {
+      res.status(403).json({ error: "Only the admin can do this" });
+      return;
+    }
+    next();
+  };
+
+const anyone = requireRole("admin", "cashier");
+const adminOnly = requireRole("admin");
+
+// PINs are short, so lock a device out after too many wrong attempts.
+const MAX_FAILED_LOGINS = 5;
+const LOCKOUT_MINUTES = 15;
+const failedLogins = new Map<string, { count: number; until: number }>();
+
 const inventory = (): Inventory[] =>
   products.map((p) => ({
     productId: p.id,
@@ -157,8 +264,8 @@ const inventory = (): Inventory[] =>
 // The cashier terminal runs on another origin (localhost:3000 / tauri://localhost).
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -172,7 +279,86 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.get("/products", (_req, res) => {
+app.post("/auth/login", (req, res) => {
+  const key = req.ip ?? "unknown";
+  const failed = failedLogins.get(key);
+  if (failed && failed.count >= MAX_FAILED_LOGINS && failed.until > Date.now()) {
+    res.status(429).json({
+      error: `Too many wrong attempts. Try again in ${LOCKOUT_MINUTES} minutes.`,
+    });
+    return;
+  }
+
+  const password = String(req.body?.password ?? "");
+  const pin = String(req.body?.pin ?? "").trim();
+  let session: Omit<Session, "exp"> | null = null;
+  if (password && passwordMatches(password)) {
+    session = { role: "admin", name: "Admin" };
+  } else if (pin) {
+    const cashier = cashiers.find((c) => pinMatches(c, pin));
+    if (cashier)
+      session = { role: "cashier", name: cashier.name, cashierId: cashier.id };
+  }
+
+  if (!session) {
+    const count = failed && failed.until > Date.now() ? failed.count + 1 : 1;
+    failedLogins.set(key, {
+      count,
+      until: Date.now() + LOCKOUT_MINUTES * 60_000,
+    });
+    res
+      .status(401)
+      .json({ error: password ? "Wrong password" : "Wrong PIN" });
+    return;
+  }
+  failedLogins.delete(key);
+  res.json({ token: createToken(session), role: session.role, name: session.name });
+});
+
+app.get("/cashiers", adminOnly, (_req, res) => {
+  res.json(cashiers.map(({ id, name }) => ({ id, name })));
+});
+
+app.post("/cashiers", adminOnly, (req, res) => {
+  const name = String(req.body?.name ?? "").trim();
+  const pin = String(req.body?.pin ?? "").trim();
+  if (!name) {
+    res.status(400).json({ error: "Cashier name is required" });
+    return;
+  }
+  if (!/^\d{4,8}$/.test(pin)) {
+    res.status(400).json({ error: "PIN must be 4 to 8 digits" });
+    return;
+  }
+  // Cashiers log in with the PIN alone, so each one must be different.
+  if (cashiers.some((c) => pinMatches(c, pin))) {
+    res.status(409).json({ error: "Another cashier already uses that PIN" });
+    return;
+  }
+  const salt = randomBytes(16).toString("hex");
+  const cashier: Cashier = {
+    id: randomUUID(),
+    name,
+    salt,
+    pinHash: hashPin(pin, salt),
+  };
+  cashiers.push(cashier);
+  saveCashiers();
+  res.status(201).json({ id: cashier.id, name: cashier.name });
+});
+
+app.delete("/cashiers/:id", adminOnly, (req, res) => {
+  const index = cashiers.findIndex((c) => c.id === req.params.id);
+  if (index === -1) {
+    res.status(404).json({ error: "Cashier not found" });
+    return;
+  }
+  cashiers.splice(index, 1);
+  saveCashiers();
+  res.sendStatus(204);
+});
+
+app.get("/products", anyone, (_req, res) => {
   res.json(products);
 });
 
@@ -219,7 +405,7 @@ const findConflict = (input: ProductInput, exceptId?: string) => {
   return null;
 };
 
-app.post("/products", (req, res) => {
+app.post("/products", adminOnly, (req, res) => {
   const input = readProductInput(req.body);
   if (typeof input === "string") {
     res.status(400).json({ error: input });
@@ -246,8 +432,9 @@ app.post("/products", (req, res) => {
   res.status(201).json(product);
 });
 
-app.put("/products/:id", (req, res) => {
-  const index = products.findIndex((p) => p.id === req.params.id);
+app.put("/products/:id", adminOnly, (req, res) => {
+  const id = String(req.params.id);
+  const index = products.findIndex((p) => p.id === id);
   if (index === -1) {
     res.status(404).json({ error: "Product not found" });
     return;
@@ -257,7 +444,7 @@ app.put("/products/:id", (req, res) => {
     res.status(400).json({ error: input });
     return;
   }
-  const conflict = findConflict(input, req.params.id);
+  const conflict = findConflict(input, id);
   if (conflict) {
     res.status(409).json({ error: conflict });
     return;
@@ -266,7 +453,7 @@ app.put("/products/:id", (req, res) => {
   // Past orders keep their own copy of the name and prices, so they are
   // unaffected. Optional fields left empty are removed.
   const { quantity, ...fields } = input;
-  const product: Product = { id: req.params.id, ...fields };
+  const product: Product = { id, ...fields };
   products[index] = product;
   stock.set(product.id, quantity);
   // Editing a sample product means the admin is keeping it, so start saving.
@@ -275,11 +462,11 @@ app.put("/products/:id", (req, res) => {
   res.json(product);
 });
 
-app.get("/inventory", (_req, res) => {
+app.get("/inventory", anyone, (_req, res) => {
   res.json(inventory());
 });
 
-app.post("/inventory/import", (req, res) => {
+app.post("/inventory/import", adminOnly, (req, res) => {
   const rows = typeof req.body === "string" ? parseCsv(req.body) : [];
   if (rows.length < 2) {
     res.status(400).json({ error: "The file has no product rows" });
@@ -393,11 +580,11 @@ app.post("/inventory/import", (req, res) => {
   res.json({ added, updated, skipped: errors.length, errors });
 });
 
-app.get("/customers", (_req, res) => {
+app.get("/customers", adminOnly, (_req, res) => {
   res.json(customers);
 });
 
-app.post("/customers", (req, res) => {
+app.post("/customers", adminOnly, (req, res) => {
   const name = String(req.body?.name ?? "").trim();
   const phone = String(req.body?.phone ?? "").trim();
   const email = String(req.body?.email ?? "").trim();
@@ -417,11 +604,11 @@ app.post("/customers", (req, res) => {
   res.status(201).json(customer);
 });
 
-app.get("/orders", (_req, res) => {
+app.get("/orders", adminOnly, (_req, res) => {
   res.json(orders);
 });
 
-app.post("/orders", (req, res) => {
+app.post("/orders", anyone, (req, res) => {
   const requested: unknown = req.body?.items;
   if (!Array.isArray(requested) || requested.length === 0) {
     res.status(400).json({ error: "Order must contain at least one item" });

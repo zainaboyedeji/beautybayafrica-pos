@@ -10,7 +10,8 @@ import type {
 import Link from "next/link";
 import { flushSync } from "react-dom";
 import Receipt from "../components/receipt";
-import { API_URL, fetchCatalog, money } from "../lib/api";
+import { API_URL, apiFetch, fetchCatalog, money } from "../lib/api";
+import { getSession, logOut } from "../lib/auth";
 
 // Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
 const AUTO_PRINT = process.env.NEXT_PUBLIC_AUTO_PRINT_RECEIPT !== "false";
@@ -25,6 +26,8 @@ const EMPTY_CUSTOMER: Customer = { name: "", phone: "", email: "" };
 type CheckoutStep = "payment" | "customer";
 
 export default function CashierTerminal() {
+  // RequireLogin only renders this page once someone is logged in.
+  const session = getSession();
   const [products, setProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<Record<string, number>>({});
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -114,7 +117,7 @@ export default function CashierTerminal() {
     setCharging(true);
     setCheckoutError(null);
     try {
-      const res = await fetch(`${API_URL}/orders`, {
+      const res = await apiFetch("/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -151,12 +154,14 @@ export default function CashierTerminal() {
     <div className="flex h-screen flex-col bg-zinc-100 text-zinc-900 print:block print:h-auto print:bg-white">
       <header className="flex items-center print:hidden gap-4 bg-zinc-900 px-6 py-3 text-white">
         <h1 className="text-lg font-semibold">Point of sale</h1>
-        <Link
-          href="/"
-          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-        >
-          ← Back office
-        </Link>
+        {session?.role === "admin" && (
+          <Link
+            href="/"
+            className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
+          >
+            ← Back office
+          </Link>
+        )}
         <input
           value={search}
           autoFocus
@@ -167,6 +172,13 @@ export default function CashierTerminal() {
           placeholder="Scan barcode or search by name or SKU"
           className="ml-auto w-72 rounded-md bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500"
         />
+        <span className="text-sm text-zinc-400">{session?.name}</span>
+        <button
+          onClick={logOut}
+          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
+        >
+          Log out
+        </button>
       </header>
 
       {error && (

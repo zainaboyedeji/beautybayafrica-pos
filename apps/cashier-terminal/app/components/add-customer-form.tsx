@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { API_URL, describeError } from "../lib/api";
+import { apiFetch, describeError } from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
 type Props = { onSaved: (message: string) => void; onCancel: () => void };
@@ -15,7 +15,7 @@ export default function AddCustomerForm({ onSaved, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/customers`, {
+      const res = await apiFetch("/customers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

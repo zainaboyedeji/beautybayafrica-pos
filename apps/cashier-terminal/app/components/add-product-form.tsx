@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Product } from "@pos/types";
-import { API_URL, describeError } from "../lib/api";
+import { apiFetch, describeError } from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
 const EMPTY_FORM = {
@@ -64,8 +64,8 @@ export default function AddProductForm({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(
-        product ? `${API_URL}/products/${product.id}` : `${API_URL}/products`,
+      const res = await apiFetch(
+        product ? `/products/${product.id}` : "/products",
         {
           method: product ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },

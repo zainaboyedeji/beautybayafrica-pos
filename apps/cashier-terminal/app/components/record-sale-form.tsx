@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { PaymentMethod } from "@pos/types";
 import {
   API_URL,
+  apiFetch,
   describeError,
   fetchCatalog,
   fetchCustomers,
@@ -66,7 +67,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
         );
       }
 
-      const res = await fetch(`${API_URL}/orders`, {
+      const res = await apiFetch("/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -10,7 +10,7 @@ import AddProductForm from "../../components/add-product-form";
 import Modal from "../../components/modal";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
 import {
-  API_URL,
+  apiFetch,
   describeError,
   fetchCatalog,
   money,
@@ -42,7 +42,7 @@ export default function InventoryPage() {
     setResult(null);
     setUploadError(null);
     try {
-      const res = await fetch(`${API_URL}/inventory/import`, {
+      const res = await apiFetch("/inventory/import", {
         method: "POST",
         headers: { "Content-Type": "text/csv" },
         body: await file.text(),

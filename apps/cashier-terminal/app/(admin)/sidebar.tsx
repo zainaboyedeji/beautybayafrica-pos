@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { logOut } from "../lib/auth";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
   { href: "/inventory", label: "Inventory" },
   { href: "/sales", label: "Sales" },
   { href: "/customers", label: "Customers" },
+  { href: "/cashiers", label: "Cashiers" },
 ];
 
 export default function Sidebar() {
@@ -38,6 +40,12 @@ export default function Sidebar() {
       >
         Sell products
       </Link>
+      <button
+        onClick={logOut}
+        className="mt-2 rounded-md px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800"
+      >
+        Log out
+      </button>
     </aside>
   );
 }
