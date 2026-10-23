@@ -23,7 +23,7 @@ type ImportResult = {
 };
 
 const TEMPLATE =
-  "sku,name,cost_price,price,quantity,image_url\nBEV-001,Bottled Water 75cl,500,800,40,https://res.cloudinary.com/your-cloud/image/upload/water.jpg\nSNK-001,Potato Chips,900,1500,25,\n";
+  "sku,barcode,name,cost_price,price,quantity,image_url\nBEV-001,5012345678900,Bottled Water 75cl,500,800,40,https://res.cloudinary.com/your-cloud/image/upload/water.jpg\nSNK-001,,Potato Chips,900,1500,25,\n";
 
 export default function InventoryPage() {
   const catalog = useLoad(fetchCatalog);
@@ -92,6 +92,7 @@ export default function InventoryPage() {
             <code className="rounded bg-zinc-100 px-1">price</code> and{" "}
             <code className="rounded bg-zinc-100 px-1">quantity</code>, plus an
             optional{" "}
+            <code className="rounded bg-zinc-100 px-1">barcode</code>,{" "}
             <code className="rounded bg-zinc-100 px-1">cost_price</code> and{" "}
             <code className="rounded bg-zinc-100 px-1">image_url</code>{" "}
             (Cloudinary link).
@@ -160,6 +161,7 @@ export default function InventoryPage() {
               <tr>
                 <th className="px-4 py-3">Image</th>
                 <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3">Barcode</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3 text-right">Cost price</th>
                 <th className="px-4 py-3 text-right">Price</th>
@@ -183,6 +185,9 @@ export default function InventoryPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{p.sku}</td>
+                  <td className="px-4 py-3 text-zinc-500">
+                    {p.barcode ?? "—"}
+                  </td>
                   <td className="px-4 py-3 font-medium">{p.name}</td>
                   <td className="px-4 py-3 text-right">
                     {p.costPrice !== undefined

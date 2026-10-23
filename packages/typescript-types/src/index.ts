@@ -7,6 +7,8 @@ export interface Product {
   price: number;
   /** What the shop paid for one unit. */
   costPrice?: number;
+  /** Scannable code (EAN, UPC, …), kept as text so leading zeros survive. */
+  barcode?: string;
   imageUrl?: CloudinaryUrl;
 }
 

@@ -69,6 +69,7 @@ const COLUMN_ALIASES = {
   costPrice: ["cost_price", "cost price", "cost", "purchase price", "buying price"],
   quantity: ["quantity", "qty", "stock", "stock quantity", "in stock"],
   imageUrl: ["image_url", "image url", "image", "images"],
+  barcode: ["barcode", "gtin, upc, ean, or isbn", "gtin", "upc", "ean"],
 } as const;
 
 const parseCsv = (text: string): string[][] => {
@@ -198,6 +199,7 @@ app.post("/products", (req, res) => {
     res.status(400).json({ error: "Cost price must be a valid number" });
     return;
   }
+  const barcode = String(req.body?.barcode ?? "").trim();
   const imageUrl = String(req.body?.imageUrl ?? "").trim();
   if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/")) {
     res.status(400).json({
@@ -216,6 +218,12 @@ app.post("/products", (req, res) => {
     res.status(409).json({ error: `A product with SKU ${sku} already exists` });
     return;
   }
+  if (barcode && products.some((p) => p.barcode === barcode)) {
+    res
+      .status(409)
+      .json({ error: `A product with barcode ${barcode} already exists` });
+    return;
+  }
 
   const product: Product = {
     id: randomUUID(),
@@ -223,6 +231,7 @@ app.post("/products", (req, res) => {
     name,
     price,
     ...(hasCost ? { costPrice } : {}),
+    ...(barcode ? { barcode } : {}),
     ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
   };
   products.push(product);
@@ -254,6 +263,7 @@ app.post("/inventory/import", (req, res) => {
     quantity: column("quantity"),
     costPrice: column("costPrice"),
     imageUrl: column("imageUrl"),
+    barcode: column("barcode"),
   };
   const missing = (["sku", "name", "price", "quantity"] as const).filter(
     (key) => cols[key] === -1,
@@ -268,6 +278,7 @@ app.post("/inventory/import", (req, res) => {
   const errors: { row: number; message: string }[] = [];
   const valid: CatalogEntry[] = [];
   const seen = new Set<string>();
+  const seenBarcodes = new Set<string>();
   rows.slice(1).forEach((cells, index) => {
     const rowNumber = index + 2;
     const sku = (cells[cols.sku] ?? "").trim();
@@ -278,11 +289,17 @@ app.post("/inventory/import", (req, res) => {
       cols.costPrice === -1 ? "" : (cells[cols.costPrice] ?? "").trim();
     const costPrice = parseNumber(costCell);
     const image = cols.imageUrl === -1 ? "" : (cells[cols.imageUrl] ?? "").trim();
+    const barcode =
+      cols.barcode === -1 ? "" : (cells[cols.barcode] ?? "").trim();
     const fail = (message: string) => errors.push({ row: rowNumber, message });
 
     if (!sku) return fail("SKU is empty");
     if (seen.has(sku)) return fail(`SKU ${sku} appears more than once`);
     if (!name) return fail("Name is empty");
+    if (barcode && seenBarcodes.has(barcode))
+      return fail(`Barcode ${barcode} appears more than once`);
+    if (barcode && products.some((p) => p.barcode === barcode && p.sku !== sku))
+      return fail(`Barcode ${barcode} already belongs to another product`);
     if ((cells[cols.price] ?? "").trim() === "" || !(price >= 0))
       return fail("Price is not a valid number");
     if (costCell !== "" && !(costPrice >= 0))
@@ -295,6 +312,7 @@ app.post("/inventory/import", (req, res) => {
       return fail("Quantity is not a whole number");
 
     seen.add(sku);
+    if (barcode) seenBarcodes.add(barcode);
     valid.push({
       id: "",
       sku,
@@ -302,6 +320,7 @@ app.post("/inventory/import", (req, res) => {
       price,
       quantity,
       ...(costCell !== "" ? { costPrice } : {}),
+      ...(barcode ? { barcode } : {}),
       ...(image.startsWith("https://res.cloudinary.com/")
         ? { imageUrl: image as CloudinaryUrl }
         : {}),

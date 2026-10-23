@@ -8,7 +8,12 @@ import type {
   Product,
 } from "@pos/types";
 import Link from "next/link";
+import { flushSync } from "react-dom";
+import Receipt from "../components/receipt";
 import { API_URL, fetchCatalog, money } from "../lib/api";
+
+// Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
+const AUTO_PRINT = process.env.NEXT_PUBLIC_AUTO_PRINT_RECEIPT !== "false";
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   transfer: "Bank transfer",
@@ -58,7 +63,10 @@ export default function CashierTerminal() {
     const q = search.trim().toLowerCase();
     if (!q) return products;
     return products.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q),
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        (p.barcode ?? "").toLowerCase().includes(q),
     );
   }, [products, search]);
 
@@ -76,6 +84,19 @@ export default function CashierTerminal() {
       else next[id] = capped;
       return next;
     });
+  };
+
+  // A barcode scanner types the code into the search box and presses Enter.
+  const addScanned = () => {
+    const code = search.trim().toLowerCase();
+    if (!code) return;
+    const match = products.find(
+      (p) =>
+        p.barcode?.toLowerCase() === code || p.sku.toLowerCase() === code,
+    );
+    if (!match) return;
+    setQuantity(match.id, (cart[match.id] ?? 0) + 1);
+    setSearch("");
   };
 
   const startCheckout = () => {
@@ -107,7 +128,9 @@ export default function CashierTerminal() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Order failed");
-      setLastOrder(body as Order);
+      // Render the receipt now so the print dialog shows this sale.
+      flushSync(() => setLastOrder(body as Order));
+      if (AUTO_PRINT) window.print();
       setCart({});
       setStep(null);
       await load();
@@ -125,8 +148,8 @@ export default function CashierTerminal() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-100 text-zinc-900">
-      <header className="flex items-center gap-4 bg-zinc-900 px-6 py-3 text-white">
+    <div className="flex h-screen flex-col bg-zinc-100 text-zinc-900 print:block print:h-auto print:bg-white">
+      <header className="flex items-center print:hidden gap-4 bg-zinc-900 px-6 py-3 text-white">
         <h1 className="text-lg font-semibold">Point of sale</h1>
         <Link
           href="/"
@@ -136,14 +159,18 @@ export default function CashierTerminal() {
         </Link>
         <input
           value={search}
+          autoFocus
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or SKU"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") addScanned();
+          }}
+          placeholder="Scan barcode or search by name or SKU"
           className="ml-auto w-72 rounded-md bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500"
         />
       </header>
 
       {error && (
-        <div className="flex items-center justify-between bg-red-100 px-6 py-2 text-sm text-red-800">
+        <div className="flex items-center justify-between bg-red-100 print:hidden px-6 py-2 text-sm text-red-800">
           <span>{error}</span>
           <button onClick={() => void load()} className="font-medium underline">
             Retry
@@ -151,7 +178,7 @@ export default function CashierTerminal() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 print:hidden">
         <main className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <p className="text-zinc-500">Loading products…</p>
@@ -201,13 +228,23 @@ export default function CashierTerminal() {
           </h2>
           <div className="flex-1 overflow-y-auto px-5">
             {lines.length === 0 ? (
-              <p className="py-6 text-sm text-zinc-500">
-                {lastOrder
-                  ? `Sale complete — ${money.format(lastOrder.total)} paid by ${PAYMENT_LABELS[
-                      lastOrder.paymentMethod
-                    ].toLowerCase()} for ${lastOrder.customer.name}.`
-                  : "Tap a product to add it to the sale."}
-              </p>
+              <div className="py-6">
+                <p className="text-sm text-zinc-500">
+                  {lastOrder
+                    ? `Sale complete — ${money.format(lastOrder.total)} paid by ${PAYMENT_LABELS[
+                        lastOrder.paymentMethod
+                      ].toLowerCase()} for ${lastOrder.customer.name}.`
+                    : "Tap a product to add it to the sale."}
+                </p>
+                {lastOrder && (
+                  <button
+                    onClick={() => window.print()}
+                    className="mt-3 w-full rounded-lg border border-zinc-300 py-2 text-sm font-medium hover:bg-zinc-100"
+                  >
+                    Print receipt
+                  </button>
+                )}
+              </div>
             ) : (
               <ul className="divide-y divide-zinc-100">
                 {lines.map(({ product, quantity }) => (
@@ -271,7 +308,7 @@ export default function CashierTerminal() {
       </div>
 
       {step && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-6">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-6 print:hidden">
           <div
             role="dialog"
             aria-modal="true"
@@ -382,6 +419,13 @@ export default function CashierTerminal() {
             )}
           </div>
         </div>
+      )}
+
+      {lastOrder && (
+        <Receipt
+          order={lastOrder}
+          productNames={Object.fromEntries(products.map((p) => [p.id, p.name]))}
+        />
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
 const EMPTY_FORM = {
   sku: "",
+  barcode: "",
   name: "",
   costPrice: "",
   price: "",
@@ -15,6 +16,7 @@ const EMPTY_FORM = {
 
 const FIELDS = [
   { key: "sku", label: "SKU", type: "text", required: true },
+  { key: "barcode", label: "Barcode", type: "text", required: false },
   { key: "name", label: "Name", type: "text", required: true },
   { key: "costPrice", label: "Cost price", type: "number", required: false },
   { key: "price", label: "Selling price", type: "number", required: true },
@@ -41,6 +43,9 @@ export default function AddProductForm({ onSaved, onCancel }: Props) {
           name: form.name,
           price: Number(form.price),
           quantity: Number(form.quantity),
+          ...(form.barcode.trim() !== ""
+            ? { barcode: form.barcode.trim() }
+            : {}),
           ...(form.costPrice !== ""
             ? { costPrice: Number(form.costPrice) }
             : {}),
@@ -70,7 +75,11 @@ export default function AddProductForm({ onSaved, onCancel }: Props) {
         <label
           key={field.key}
           className={`text-sm font-medium ${
-            field.key === "name" || field.key === "sku" ? "col-span-2" : ""
+            field.key === "name" ||
+            field.key === "sku" ||
+            field.key === "barcode"
+              ? "col-span-2"
+              : ""
           } ${field.key === "quantity" || field.key === "imageUrl" ? "col-span-2" : ""}`}
         >
           {field.label}
@@ -92,8 +101,23 @@ export default function AddProductForm({ onSaved, onCancel }: Props) {
             placeholder={
               field.key === "imageUrl"
                 ? "https://res.cloudinary.com/…"
+                : field.key === "barcode"
+                  ? "Scan or type the barcode"
+                  : undefined
+            }
+            onKeyDown={
+              // Scanners press Enter after the code; don't submit the form.
+              field.key === "barcode"
+                ? (e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    e.currentTarget.form
+                      ?.querySelector<HTMLInputElement>("input[name=name]")
+                      ?.focus();
+                  }
                 : undefined
             }
+            name={field.key}
             value={form[field.key]}
             onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
             className={INPUT}
