@@ -126,7 +126,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
           </select>
         </label>
         <label className="text-sm font-medium">
-          Sale date <span className="font-normal text-zinc-500">(optional)</span>
+          Sale date <span className="font-normal text-muted">(optional)</span>
           <input
             type="datetime-local"
             value={date}
@@ -162,7 +162,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
             />
           </label>
           <label className="text-sm font-medium">
-            Email <span className="font-normal text-zinc-500">(optional)</span>
+            Email <span className="font-normal text-muted">(optional)</span>
             <input
               type="email"
               value={newCustomer.email}
@@ -206,7 +206,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
             type="button"
             disabled={lines.length === 1}
             onClick={() => setLines(lines.filter((_, i) => i !== index))}
-            className="rounded-md px-3 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
+            className="rounded-md px-3 text-sm text-muted hover:bg-brand-soft disabled:opacity-40"
           >
             Remove
           </button>
@@ -215,7 +215,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
       <button
         type="button"
         onClick={() => setLines([...lines, EMPTY_LINE])}
-        className="mt-3 text-sm font-medium text-emerald-700 underline"
+        className="mt-3 text-sm font-medium text-brand-deep underline"
       >
         + Add another item
       </button>

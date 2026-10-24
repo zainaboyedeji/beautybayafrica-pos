@@ -58,7 +58,7 @@ export default function AddCustomerForm({ onSaved, onCancel }: Props) {
         />
       </label>
       <label className="text-sm font-medium">
-        Email <span className="font-normal text-zinc-500">(optional)</span>
+        Email <span className="font-normal text-muted">(optional)</span>
         <input
           type="email"
           value={form.email}

@@ -151,8 +151,8 @@ export default function CashierTerminal() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-100 text-zinc-900 print:block print:h-auto print:bg-white">
-      <header className="flex items-center print:hidden gap-4 bg-zinc-900 px-6 py-3 text-white">
+    <div className="flex h-screen flex-col bg-surface-alt text-ink print:block print:h-auto print:bg-white">
+      <header className="flex items-center print:hidden gap-4 bg-ink px-6 py-3 text-white">
         <h1 className="text-lg font-semibold">Point of sale</h1>
         {session?.role === "admin" && (
           <Link
@@ -170,7 +170,7 @@ export default function CashierTerminal() {
             if (e.key === "Enter") addScanned();
           }}
           placeholder="Scan barcode or search by name or SKU"
-          className="ml-auto w-72 rounded-md bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500"
+          className="ml-auto w-72 rounded-md bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-brand"
         />
         <span className="text-sm text-zinc-400">{session?.name}</span>
         <button
@@ -193,9 +193,9 @@ export default function CashierTerminal() {
       <div className="flex min-h-0 flex-1 print:hidden">
         <main className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <p className="text-zinc-500">Loading products…</p>
+            <p className="text-muted">Loading products…</p>
           ) : visible.length === 0 ? (
-            <p className="text-zinc-500">No products found.</p>
+            <p className="text-muted">No products found.</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
               {visible.map((p) => {
@@ -215,16 +215,16 @@ export default function CashierTerminal() {
                       className="mb-3 aspect-square w-full rounded-md object-cover"
                     />
                   ) : (
-                    <div className="mb-3 flex aspect-square w-full items-center justify-center rounded-md bg-zinc-100 text-3xl font-semibold text-zinc-300">
+                    <div className="mb-3 flex aspect-square w-full items-center justify-center rounded-md bg-surface-alt text-3xl font-semibold text-brand">
                       {p.name.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <span className="text-xs text-zinc-500">{p.sku}</span>
+                  <span className="text-xs text-muted">{p.sku}</span>
                     <span className="mt-1 font-medium">{p.name}</span>
                     <span className="mt-4 text-lg font-semibold">
                       {money.format(p.price)}
                     </span>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-muted">
                       {left > 0 ? `${left} in stock` : "Out of stock"}
                     </span>
                   </button>
@@ -234,14 +234,14 @@ export default function CashierTerminal() {
           )}
         </main>
 
-        <aside className="flex w-96 flex-col border-l border-zinc-200 bg-white">
-          <h2 className="border-b border-zinc-200 px-5 py-4 font-semibold">
+        <aside className="flex w-96 flex-col border-l border-line bg-white">
+          <h2 className="border-b border-line px-5 py-4 font-semibold">
             Current sale
           </h2>
           <div className="flex-1 overflow-y-auto px-5">
             {lines.length === 0 ? (
               <div className="py-6">
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted">
                   {lastOrder
                     ? `Sale complete — ${money.format(lastOrder.total)} paid by ${PAYMENT_LABELS[
                         lastOrder.paymentMethod
@@ -251,21 +251,21 @@ export default function CashierTerminal() {
                 {lastOrder && (
                   <button
                     onClick={() => window.print()}
-                    className="mt-3 w-full rounded-lg border border-zinc-300 py-2 text-sm font-medium hover:bg-zinc-100"
+                    className="mt-3 w-full rounded-lg border border-line-strong py-2 text-sm font-medium hover:bg-brand-soft"
                   >
                     Print receipt
                   </button>
                 )}
               </div>
             ) : (
-              <ul className="divide-y divide-zinc-100">
+              <ul className="divide-y divide-line">
                 {lines.map(({ product, quantity }) => (
                   <li key={product.id} className="flex items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
                         {product.name}
                       </p>
-                      <p className="text-xs text-zinc-500">
+                      <p className="text-xs text-muted">
                         {money.format(product.price)} each
                       </p>
                     </div>
@@ -273,7 +273,7 @@ export default function CashierTerminal() {
                       <button
                         aria-label={`Remove one ${product.name}`}
                         onClick={() => setQuantity(product.id, quantity - 1)}
-                        className="h-8 w-8 rounded-md bg-zinc-100 font-semibold hover:bg-zinc-200"
+                        className="h-8 w-8 rounded-md bg-surface-alt font-semibold hover:bg-brand-soft"
                       >
                         −
                       </button>
@@ -281,7 +281,7 @@ export default function CashierTerminal() {
                       <button
                         aria-label={`Add one ${product.name}`}
                         onClick={() => setQuantity(product.id, quantity + 1)}
-                        className="h-8 w-8 rounded-md bg-zinc-100 font-semibold hover:bg-zinc-200"
+                        className="h-8 w-8 rounded-md bg-surface-alt font-semibold hover:bg-brand-soft"
                       >
                         +
                       </button>
@@ -294,9 +294,9 @@ export default function CashierTerminal() {
               </ul>
             )}
           </div>
-          <div className="border-t border-zinc-200 p-5">
+          <div className="border-t border-line p-5">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm text-zinc-500">Total</span>
+              <span className="text-sm text-muted">Total</span>
               <span className="text-2xl font-semibold">
                 {money.format(total)}
               </span>
@@ -304,14 +304,14 @@ export default function CashierTerminal() {
             <button
               disabled={lines.length === 0 || charging}
               onClick={startCheckout}
-              className="mt-4 w-full rounded-lg bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+              className="mt-4 w-full rounded-lg bg-brand py-3 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
             >
               Charge
             </button>
             <button
               disabled={lines.length === 0 || charging}
               onClick={() => setCart({})}
-              className="mt-2 w-full rounded-lg py-2 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
+              className="mt-2 w-full rounded-lg py-2 text-sm text-muted hover:bg-brand-soft disabled:opacity-40"
             >
               Clear sale
             </button>
@@ -326,7 +326,7 @@ export default function CashierTerminal() {
             aria-modal="true"
             className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">
               Step {step === "payment" ? 1 : 2} of 2 · {money.format(total)}
             </p>
 
@@ -343,10 +343,10 @@ export default function CashierTerminal() {
                         setPaymentMethod(m);
                         setStep("customer");
                       }}
-                      className={`rounded-lg border-2 py-8 text-lg font-semibold hover:border-emerald-600 hover:bg-emerald-50 ${
+                      className={`rounded-lg border-2 py-8 text-lg font-semibold hover:border-brand hover:bg-brand-soft ${
                         paymentMethod === m
-                          ? "border-emerald-600 bg-emerald-50"
-                          : "border-zinc-200"
+                          ? "border-brand bg-brand-soft"
+                          : "border-line"
                       }`}
                     >
                       {PAYMENT_LABELS[m]}
@@ -355,7 +355,7 @@ export default function CashierTerminal() {
                 </div>
                 <button
                   onClick={() => setStep(null)}
-                  className="mt-4 w-full rounded-lg py-2 text-sm text-zinc-600 hover:bg-zinc-100"
+                  className="mt-4 w-full rounded-lg py-2 text-sm text-muted hover:bg-brand-soft"
                 >
                   Cancel
                 </button>
@@ -368,7 +368,7 @@ export default function CashierTerminal() {
                 }}
               >
                 <h2 className="mt-1 text-xl font-semibold">Customer details</h2>
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted">
                   Paying by{" "}
                   {paymentMethod && PAYMENT_LABELS[paymentMethod].toLowerCase()}
                 </p>
@@ -381,7 +381,7 @@ export default function CashierTerminal() {
                     onChange={(e) =>
                       setCustomer({ ...customer, name: e.target.value })
                     }
-                    className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
                   />
                 </label>
                 <label className="mt-3 block text-sm font-medium">
@@ -393,18 +393,18 @@ export default function CashierTerminal() {
                     onChange={(e) =>
                       setCustomer({ ...customer, phone: e.target.value })
                     }
-                    className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
                   />
                 </label>
                 <label className="mt-3 block text-sm font-medium">
-                  Email <span className="font-normal text-zinc-500">(optional)</span>
+                  Email <span className="font-normal text-muted">(optional)</span>
                   <input
                     type="email"
                     value={customer.email ?? ""}
                     onChange={(e) =>
                       setCustomer({ ...customer, email: e.target.value })
                     }
-                    className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
                   />
                 </label>
                 {checkoutError && (
@@ -415,14 +415,14 @@ export default function CashierTerminal() {
                     type="button"
                     disabled={charging}
                     onClick={() => setStep("payment")}
-                    className="flex-1 rounded-lg bg-zinc-100 py-3 font-medium hover:bg-zinc-200 disabled:opacity-40"
+                    className="flex-1 rounded-lg bg-surface-alt py-3 font-medium hover:bg-brand-soft disabled:opacity-40"
                   >
                     Back
                   </button>
                   <button
                     type="submit"
                     disabled={!customerValid || charging}
-                    className="flex-1 rounded-lg bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+                    className="flex-1 rounded-lg bg-brand py-3 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
                   >
                     {charging ? "Completing…" : "Complete sale"}
                   </button>

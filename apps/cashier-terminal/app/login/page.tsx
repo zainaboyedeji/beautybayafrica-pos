@@ -36,7 +36,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-100 p-6 text-zinc-900">
+    <div className="flex min-h-screen items-center justify-center bg-surface-alt p-6 text-ink">
       <form
         className="w-full max-w-sm rounded-xl bg-white p-6 shadow-sm"
         onSubmit={(e) => {
@@ -45,7 +45,7 @@ export default function LoginPage() {
         }}
       >
         <h1 className="text-2xl font-semibold">Log in</h1>
-        <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-zinc-100 p-1 text-sm font-medium">
+        <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-surface-alt p-1 text-sm font-medium">
           {(["cashier", "admin"] as const).map((m) => (
             <button
               key={m}
@@ -56,7 +56,7 @@ export default function LoginPage() {
                 setError(null);
               }}
               className={`rounded-md py-2 ${
-                mode === m ? "bg-white shadow-sm" : "text-zinc-600"
+                mode === m ? "bg-white shadow-sm" : "text-muted"
               }`}
             >
               {m === "cashier" ? "Cashier" : "Admin"}

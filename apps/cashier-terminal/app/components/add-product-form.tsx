@@ -116,7 +116,7 @@ export default function AddProductForm({
         >
           {field.label}
           {!field.required && (
-            <span className="font-normal text-zinc-500"> (optional)</span>
+            <span className="font-normal text-muted"> (optional)</span>
           )}
           <input
             autoFocus={index === 0}
@@ -161,7 +161,7 @@ export default function AddProductForm({
         <img
           src={form.imageUrl.trim()}
           alt="Product image preview"
-          className="col-span-2 h-32 w-32 rounded-lg border border-zinc-200 object-cover"
+          className="col-span-2 h-32 w-32 rounded-lg border border-line object-cover"
         />
       )}
       {error && <p className="col-span-2 text-sm text-red-700">{error}</p>}

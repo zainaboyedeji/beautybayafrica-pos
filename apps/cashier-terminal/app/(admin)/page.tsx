@@ -72,7 +72,7 @@ export default function Dashboard() {
     <div className="mx-auto max-w-6xl">
       <h1 className="text-3xl font-semibold">Dashboard</h1>
 
-      <h2 className="mt-8 text-sm font-medium text-zinc-500">Quick actions</h2>
+      <h2 className="mt-8 font-sans text-sm font-medium text-muted">Quick actions</h2>
       <div className="mt-3 flex flex-wrap gap-3">
         {MODAL_ACTIONS.map((action) => (
           <button
@@ -105,21 +105,21 @@ export default function Dashboard() {
         }}
       />
 
-      <h2 className="mt-10 text-sm font-medium text-zinc-500">
+      <h2 className="mt-10 font-sans text-sm font-medium text-muted">
         Analytics · all time
       </h2>
       <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-3">
         {tiles.map((tile) => (
           <div
             key={tile.label}
-            className="rounded-lg border-l-4 border-emerald-600 bg-white p-5 shadow-sm"
+            className="rounded-lg border-l-4 border-brand bg-white p-5 shadow-sm"
           >
-            <p className="text-sm text-zinc-500">{tile.label}</p>
+            <p className="text-sm text-muted">{tile.label}</p>
             <p className="mt-1 text-2xl font-semibold">{tile.value}</p>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-xs text-zinc-500">
+      <p className="mt-2 text-xs text-muted">
         Gross profit counts only items sold while the product had a cost price.
       </p>
 
@@ -127,9 +127,9 @@ export default function Dashboard() {
         <section className="rounded-lg bg-white p-5 shadow-sm">
           <h2 className="font-semibold">Recent sales</h2>
           {sales.length === 0 ? (
-            <p className="mt-3 text-sm text-zinc-500">No sales recorded yet.</p>
+            <p className="mt-3 text-sm text-muted">No sales recorded yet.</p>
           ) : (
-            <ul className="mt-3 divide-y divide-zinc-100 text-sm">
+            <ul className="mt-3 divide-y divide-line text-sm">
               {sales
                 .slice(-5)
                 .reverse()
@@ -137,7 +137,7 @@ export default function Dashboard() {
                   <li key={order.id} className="flex justify-between py-2">
                     <span>
                       {order.customer.name}
-                      <span className="ml-2 text-zinc-500">
+                      <span className="ml-2 text-muted">
                         {new Date(order.createdAt).toLocaleString()}
                       </span>
                     </span>
@@ -155,11 +155,11 @@ export default function Dashboard() {
             Low stock ({LOW_STOCK} or fewer left)
           </h2>
           {lowStock.length === 0 ? (
-            <p className="mt-3 text-sm text-zinc-500">
+            <p className="mt-3 text-sm text-muted">
               Nothing is running low.
             </p>
           ) : (
-            <ul className="mt-3 divide-y divide-zinc-100 text-sm">
+            <ul className="mt-3 divide-y divide-line text-sm">
               {lowStock.slice(0, 8).map((p) => (
                 <li key={p.id} className="flex justify-between py-2">
                   <span>{p.name}</span>
@@ -167,7 +167,7 @@ export default function Dashboard() {
                 </li>
               ))}
               {lowStock.length > 8 && (
-                <li className="py-2 text-zinc-500">
+                <li className="py-2 text-muted">
                   …and {lowStock.length - 8} more
                 </li>
               )}

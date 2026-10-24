@@ -16,7 +16,7 @@ export default function Sidebar() {
   const pathname = usePathname().replace(/\/$/, "") || "/";
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col bg-zinc-900 p-4 text-white">
+    <aside className="flex w-56 shrink-0 flex-col bg-ink p-4 text-white">
       <p className="px-3 py-2 text-lg font-semibold">Back office</p>
       <nav className="mt-4 flex flex-col gap-1">
         {LINKS.map((link) => (
@@ -26,7 +26,7 @@ export default function Sidebar() {
             aria-current={pathname === link.href ? "page" : undefined}
             className={`rounded-md px-3 py-2 text-sm font-medium ${
               pathname === link.href
-                ? "bg-white text-zinc-900"
+                ? "bg-brand text-ink"
                 : "text-zinc-300 hover:bg-zinc-800"
             }`}
           >
@@ -36,7 +36,7 @@ export default function Sidebar() {
       </nav>
       <Link
         href="/pos"
-        className="mt-auto rounded-lg bg-emerald-600 px-3 py-3 text-center text-sm font-semibold hover:bg-emerald-700"
+        className="mt-auto rounded-lg bg-brand px-3 py-3 text-center text-sm font-semibold text-ink hover:bg-brand-hover"
       >
         Sell products
       </Link>

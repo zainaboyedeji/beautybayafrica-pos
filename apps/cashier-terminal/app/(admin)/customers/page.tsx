@@ -51,10 +51,10 @@ export default function CustomersPage() {
         ) : !rows ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <p className="text-sm text-zinc-500">No customers yet.</p>
+          <p className="text-sm text-muted">No customers yet.</p>
         ) : (
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Phone</th>
@@ -64,7 +64,7 @@ export default function CustomersPage() {
                 <th className="px-4 py-3">Last purchase</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-line">
               {rows.map((c) => (
                 <tr key={c.phone}>
                   <td className="px-4 py-3 font-medium">{c.name}</td>

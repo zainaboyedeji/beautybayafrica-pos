@@ -59,7 +59,7 @@ export default function CashiersPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="text-3xl font-semibold">Cashiers</h1>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-muted">
         Cashiers log in with their PIN and can only sell products. They cannot
         see sales, customers or change inventory.
       </p>
@@ -105,9 +105,9 @@ export default function CashiersPage() {
         ) : !cashiers.data ? (
           <Loading />
         ) : cashiers.data.length === 0 ? (
-          <p className="text-sm text-zinc-500">No cashiers yet.</p>
+          <p className="text-sm text-muted">No cashiers yet.</p>
         ) : (
-          <ul className="divide-y divide-zinc-100 rounded-lg bg-white shadow-sm">
+          <ul className="divide-y divide-line rounded-lg bg-white shadow-sm">
             {cashiers.data.map((c) => (
               <li
                 key={c.id}

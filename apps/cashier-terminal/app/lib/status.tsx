@@ -9,5 +9,5 @@ export function LoadError() {
 }
 
 export function Loading() {
-  return <p className="text-sm text-zinc-500">Loading…</p>;
+  return <p className="text-sm text-muted">Loading…</p>;
 }

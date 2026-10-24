@@ -29,7 +29,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`max-h-full w-full overflow-auto rounded-xl bg-white p-6 text-zinc-900 shadow-xl ${
+        className={`max-h-full w-full overflow-auto rounded-xl bg-white p-6 text-ink shadow-xl ${
           wide ? "max-w-3xl" : "max-w-md"
         }`}
       >
@@ -38,7 +38,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md px-2 py-1 text-xl leading-none text-zinc-500 hover:bg-zinc-100"
+            className="rounded-md px-2 py-1 text-xl leading-none text-muted hover:bg-brand-soft"
           >
             ×
           </button>

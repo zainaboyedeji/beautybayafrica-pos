@@ -44,10 +44,10 @@ export default function SalesPage() {
         ) : !orders.data ? (
           <Loading />
         ) : orders.data.length === 0 ? (
-          <p className="text-sm text-zinc-500">No sales recorded yet.</p>
+          <p className="text-sm text-muted">No sales recorded yet.</p>
         ) : (
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Customer</th>
@@ -57,7 +57,7 @@ export default function SalesPage() {
                 <th className="px-4 py-3 text-right">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-line">
               {[...orders.data].reverse().map((order) => (
                 <tr key={order.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3">

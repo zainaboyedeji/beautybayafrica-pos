@@ -103,22 +103,22 @@ export default function InventoryPage() {
       <div className="mt-6">
         <section className="rounded-lg bg-white p-5 shadow-sm">
           <h2 className="font-semibold">Upload many products</h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-muted">
             Upload a CSV file with the columns{" "}
-            <code className="rounded bg-zinc-100 px-1">sku</code>,{" "}
-            <code className="rounded bg-zinc-100 px-1">name</code>,{" "}
-            <code className="rounded bg-zinc-100 px-1">price</code> and{" "}
-            <code className="rounded bg-zinc-100 px-1">quantity</code>, plus an
+            <code className="rounded bg-surface-alt px-1">sku</code>,{" "}
+            <code className="rounded bg-surface-alt px-1">name</code>,{" "}
+            <code className="rounded bg-surface-alt px-1">price</code> and{" "}
+            <code className="rounded bg-surface-alt px-1">quantity</code>, plus an
             optional{" "}
-            <code className="rounded bg-zinc-100 px-1">barcode</code>,{" "}
-            <code className="rounded bg-zinc-100 px-1">cost_price</code> and{" "}
-            <code className="rounded bg-zinc-100 px-1">image_url</code>{" "}
+            <code className="rounded bg-surface-alt px-1">barcode</code>,{" "}
+            <code className="rounded bg-surface-alt px-1">cost_price</code> and{" "}
+            <code className="rounded bg-surface-alt px-1">image_url</code>{" "}
             (Cloudinary link).
             Products are matched by SKU: existing ones are updated, new ones
             are added.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <label className="cursor-pointer rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+            <label className="cursor-pointer rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-brand-hover">
               {uploading ? "Uploading…" : "Choose CSV file"}
               <input
                 type="file"
@@ -135,7 +135,7 @@ export default function InventoryPage() {
             <a
               href={`data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE)}`}
               download="inventory-template.csv"
-              className="text-sm font-medium text-emerald-700 underline"
+              className="text-sm font-medium text-brand-deep underline"
             >
               Download template
             </a>
@@ -175,7 +175,7 @@ export default function InventoryPage() {
           <Loading />
         ) : (
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3">Image</th>
                 <th className="px-4 py-3">SKU</th>
@@ -188,7 +188,7 @@ export default function InventoryPage() {
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-line">
               {catalog.data.products.map((p) => (
                 <tr key={p.id}>
                   <td className="px-4 py-2">
@@ -200,11 +200,11 @@ export default function InventoryPage() {
                         className="h-10 w-10 rounded-md object-cover"
                       />
                     ) : (
-                      <div className="h-10 w-10 rounded-md bg-zinc-100" />
+                      <div className="h-10 w-10 rounded-md bg-surface-alt" />
                     )}
                   </td>
-                  <td className="px-4 py-3 text-zinc-500">{p.sku}</td>
-                  <td className="px-4 py-3 text-zinc-500">
+                  <td className="px-4 py-3 text-muted">{p.sku}</td>
+                  <td className="px-4 py-3 text-muted">
                     {p.barcode ?? "—"}
                   </td>
                   <td className="px-4 py-3 font-medium">{p.name}</td>
@@ -227,7 +227,7 @@ export default function InventoryPage() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => setEditing(p)}
-                      className="font-medium text-emerald-700 hover:underline"
+                      className="font-medium text-brand-deep hover:underline"
                     >
                       Edit
                     </button>
