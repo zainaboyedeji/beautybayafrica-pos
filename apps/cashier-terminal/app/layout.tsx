@@ -14,8 +14,8 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "POS Cashier Terminal",
-  description: "Point of sale cashier terminal",
+  title: "Beauty Bay Africa POS",
+  description: "Beauty Bay Africa point of sale",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
