@@ -50,10 +50,7 @@ export default function Receipt({ order, productNames }: Props) {
       <style>{`@page { margin: 0; } @media print { html, body { background: #fff; } }`}</style>
       <div className="px-1 py-3">
         <div className="text-center">
-          {/* Black-only logo: thermal printers can't print the pink. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mono.png" alt="" className="mx-auto h-12 w-12" />
-          <p className="mt-2 font-display text-lg font-bold tracking-wide">
+          <p className="font-display text-lg font-bold tracking-wide">
             {SHOP_NAME}
           </p>
           {SHOP_ADDRESS && <p>{SHOP_ADDRESS}</p>}
