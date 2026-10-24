@@ -11,6 +11,7 @@ type Mode = "cashier" | "admin";
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("cashier");
   const [secret, setSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +66,7 @@ export default function LoginPage() {
                 onClick={() => {
                   setMode(m);
                   setSecret("");
+                  setShowSecret(false);
                   setError(null);
                 }}
                 className={`rounded-md py-2 ${
@@ -77,17 +79,28 @@ export default function LoginPage() {
           </div>
           <label className="mt-5 block text-sm font-medium">
             {mode === "cashier" ? "PIN" : "Admin password"}
-            <input
-              key={mode}
-              autoFocus
-              required
-              type="password"
-              inputMode={mode === "cashier" ? "numeric" : undefined}
-              autoComplete={mode === "admin" ? "current-password" : "off"}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              className={INPUT}
-            />
+            <div className="relative">
+              <input
+                key={mode}
+                autoFocus
+                required
+                type={showSecret ? "text" : "password"}
+                inputMode={mode === "cashier" ? "numeric" : undefined}
+                autoComplete={mode === "admin" ? "current-password" : "off"}
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                className={`${INPUT} pr-11`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret((s) => !s)}
+                aria-label={showSecret ? "Hide" : "Show"}
+                aria-pressed={showSecret}
+                className="absolute inset-y-0 right-0 mt-1 flex w-10 items-center justify-center rounded-r-md text-muted hover:text-brand-deep"
+              >
+                <EyeIcon open={showSecret} />
+              </button>
+            </div>
           </label>
           {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
           <button
@@ -100,5 +113,24 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+      {!open && <path d="M3 3l18 18" />}
+    </svg>
   );
 }
