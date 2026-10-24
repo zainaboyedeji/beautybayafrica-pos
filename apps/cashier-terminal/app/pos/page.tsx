@@ -14,6 +14,7 @@ import {
   sellables,
 } from "../lib/api";
 import { getSession, logOut } from "../lib/auth";
+import { printPage } from "../lib/print";
 
 // Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
 const AUTO_PRINT = process.env.NEXT_PUBLIC_AUTO_PRINT_RECEIPT !== "false";
@@ -150,7 +151,7 @@ export default function CashierTerminal() {
       if (!res.ok) throw new Error(body.error ?? "Order failed");
       // Render the receipt now so the print dialog shows this sale.
       flushSync(() => setLastOrder(body as Order));
-      if (AUTO_PRINT) window.print();
+      if (AUTO_PRINT) await printPage();
       setCart({});
       setStep(null);
       await load();
@@ -287,7 +288,7 @@ export default function CashierTerminal() {
                 </p>
                 {lastOrder && (
                   <button
-                    onClick={() => window.print()}
+                    onClick={() => void printPage()}
                     className="mt-3 w-full rounded-lg border border-line-strong py-2 text-sm font-medium hover:bg-brand-soft"
                   >
                     Print receipt

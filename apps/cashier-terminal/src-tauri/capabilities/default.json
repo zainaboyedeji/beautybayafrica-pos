@@ -5,7 +5,14 @@
   "windows": [
     "main"
   ],
+  "remote": {
+    "urls": [
+      "https://beautybayafrica-pos-app.onrender.com",
+      "http://localhost:3000"
+    ]
+  },
   "permissions": [
-    "core:default"
+    "core:default",
+    "allow-print-receipt"
   ]
 }
