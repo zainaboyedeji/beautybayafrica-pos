@@ -18,7 +18,7 @@ type Props = {
 export default function ActionModals({ open, onClose, onSaved }: Props) {
   if (open === "product")
     return (
-      <Modal title="Add a product" onClose={onClose}>
+      <Modal title="Add a product" onClose={onClose} wide>
         <AddProductForm onSaved={onSaved} onCancel={onClose} />
       </Modal>
     );

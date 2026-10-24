@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Customer, Inventory, Order, Product } from "@pos/types";
+import type {
+  Customer,
+  Inventory,
+  Order,
+  Product,
+  ProductVariant,
+} from "@pos/types";
 import { getSession, logOut } from "./auth";
 
 export const API_URL =
@@ -28,7 +34,52 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
 
 export type Cashier = { id: string; name: string };
 
+/**
+ * Stock by product id, and by option id for products with options (their
+ * product id then holds the total).
+ */
 export type Catalog = { products: Product[]; stock: Record<string, number> };
+
+/** Something the till can sell: a product, or one option of a product. */
+export type Sellable = {
+  /** The option id, or the product id for a product without options. */
+  key: string;
+  product: Product;
+  variant?: ProductVariant;
+  name: string;
+  sku: string;
+  barcode?: string;
+  price: number;
+};
+
+export const sellables = (product: Product): Sellable[] =>
+  product.variants?.length
+    ? product.variants.map((variant) => ({
+        key: variant.id,
+        product,
+        variant,
+        name: `${product.name} — ${variant.name}`,
+        sku: variant.sku,
+        barcode: variant.barcode,
+        price: variant.price,
+      }))
+    : [
+        {
+          key: product.id,
+          product,
+          name: product.name,
+          sku: product.sku,
+          barcode: product.barcode,
+          price: product.price,
+        },
+      ];
+
+/** The sale line to send to the API for a sellable. */
+export const orderItem = (s: Sellable, quantity: number) => ({
+  productId: s.product.id,
+  ...(s.variant ? { variantId: s.variant.id } : {}),
+  quantity,
+});
 
 export async function fetchCatalog(): Promise<Catalog> {
   const [productsRes, inventoryRes] = await Promise.all([
@@ -41,7 +92,9 @@ export async function fetchCatalog(): Promise<Catalog> {
   const inventory: Inventory[] = await inventoryRes.json();
   return {
     products,
-    stock: Object.fromEntries(inventory.map((i) => [i.productId, i.quantity])),
+    stock: Object.fromEntries(
+      inventory.map((i) => [i.variantId ?? i.productId, i.quantity]),
+    ),
   };
 }
 

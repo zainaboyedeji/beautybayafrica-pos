@@ -9,15 +9,18 @@ import {
   fetchCatalog,
   fetchCustomers,
   money,
+  orderItem,
+  sellables,
   useLoad,
 } from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
 const NEW_CUSTOMER = "__new__";
 
-type Line = { productId: string; quantity: string };
+/** `key` is a product id, or an option id for products with options. */
+type Line = { key: string; quantity: string };
 
-const EMPTY_LINE: Line = { productId: "", quantity: "1" };
+const EMPTY_LINE: Line = { key: "", quantity: "1" };
 
 type Props = { onSaved: (message: string) => void; onCancel: () => void };
 
@@ -37,12 +40,12 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const products = catalog.data?.products ?? [];
+  const items = (catalog.data?.products ?? []).flatMap(sellables);
   const stock = catalog.data?.stock ?? {};
 
   const total = lines.reduce((sum, line) => {
-    const product = products.find((p) => p.id === line.productId);
-    return sum + (product ? product.price * Number(line.quantity || 0) : 0);
+    const item = items.find((s) => s.key === line.key);
+    return sum + (item ? item.price * Number(line.quantity || 0) : 0);
   }, 0);
 
   const updateLine = (index: number, change: Partial<Line>) =>
@@ -62,8 +65,8 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
       const quantities = new Map<string, number>();
       for (const line of lines) {
         quantities.set(
-          line.productId,
-          (quantities.get(line.productId) ?? 0) + Number(line.quantity),
+          line.key,
+          (quantities.get(line.key) ?? 0) + Number(line.quantity),
         );
       }
 
@@ -73,10 +76,12 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
         body: JSON.stringify({
           paymentMethod,
           customer,
-          items: [...quantities].map(([productId, quantity]) => ({
-            productId,
-            quantity,
-          })),
+          items: [...quantities].map(([key, quantity]) =>
+            orderItem(
+              items.find((s) => s.key === key)!,
+              quantity,
+            ),
+          ),
           ...(date ? { createdAt: new Date(date).toISOString() } : {}),
         }),
       });
@@ -181,14 +186,15 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
           <select
             required
             aria-label={`Product ${index + 1}`}
-            value={line.productId}
-            onChange={(e) => updateLine(index, { productId: e.target.value })}
+            value={line.key}
+            onChange={(e) => updateLine(index, { key: e.target.value })}
             className={`${INPUT} mt-0 min-w-0 flex-1`}
           >
             <option value="">Choose a product…</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} — {money.format(p.price)} ({stock[p.id] ?? 0} in stock)
+            {items.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.name} — {money.format(s.price)} ({stock[s.key] ?? 0} in
+                stock)
               </option>
             ))}
           </select>

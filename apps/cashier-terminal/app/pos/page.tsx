@@ -1,16 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type {
-  Customer,
-  Order,
-  PaymentMethod,
-  Product,
-} from "@pos/types";
+import type { Customer, Order, PaymentMethod, Product } from "@pos/types";
 import Link from "next/link";
 import { flushSync } from "react-dom";
 import Receipt from "../components/receipt";
-import { API_URL, apiFetch, fetchCatalog, money } from "../lib/api";
+import {
+  API_URL,
+  apiFetch,
+  fetchCatalog,
+  money,
+  orderItem,
+  sellables,
+} from "../lib/api";
 import { getSession, logOut } from "../lib/auth";
 
 // Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
@@ -30,7 +32,10 @@ export default function CashierTerminal() {
   const session = getSession();
   const [products, setProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<Record<string, number>>({});
+  // Quantities by product id, or by option id for products with options.
   const [cart, setCart] = useState<Record<string, number>>({});
+  // The product whose options are being chosen from.
+  const [picking, setPicking] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
@@ -62,21 +67,27 @@ export default function CashierTerminal() {
     void load();
   }, [load]);
 
+  const items = useMemo(() => products.flatMap(sellables), [products]);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return products;
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        (p.barcode ?? "").toLowerCase().includes(q),
+    return products.filter((p) =>
+      [p, ...(p.variants ?? [])].some(
+        (x) =>
+          x.name.toLowerCase().includes(q) ||
+          x.sku.toLowerCase().includes(q) ||
+          (x.barcode ?? "").toLowerCase().includes(q),
+      ),
     );
   }, [products, search]);
 
-  const lines = products
-    .filter((p) => cart[p.id])
-    .map((p) => ({ product: p, quantity: cart[p.id] }));
-  const total = lines.reduce((sum, l) => sum + l.product.price * l.quantity, 0);
+  const lines = items
+    .filter((s) => cart[s.key])
+    .map((s) => ({ item: s, quantity: cart[s.key] }));
+  const total = lines.reduce((sum, l) => sum + l.item.price * l.quantity, 0);
+
+  const left = (key: string) => (stock[key] ?? 0) - (cart[key] ?? 0);
 
   const setQuantity = (id: string, quantity: number) => {
     setLastOrder(null);
@@ -93,13 +104,22 @@ export default function CashierTerminal() {
   const addScanned = () => {
     const code = search.trim().toLowerCase();
     if (!code) return;
-    const match = products.find(
-      (p) =>
-        p.barcode?.toLowerCase() === code || p.sku.toLowerCase() === code,
+    const match = items.find(
+      (s) => s.barcode?.toLowerCase() === code || s.sku.toLowerCase() === code,
     );
-    if (!match) return;
-    setQuantity(match.id, (cart[match.id] ?? 0) + 1);
-    setSearch("");
+    if (match) {
+      setQuantity(match.key, (cart[match.key] ?? 0) + 1);
+      setSearch("");
+      return;
+    }
+    // The product's own SKU on a product with options: ask which one.
+    const parent = products.find(
+      (p) => p.variants && p.sku.toLowerCase() === code,
+    );
+    if (parent) {
+      setPicking(parent);
+      setSearch("");
+    }
   };
 
   const startCheckout = () => {
@@ -123,10 +143,7 @@ export default function CashierTerminal() {
         body: JSON.stringify({
           paymentMethod,
           customer,
-          items: lines.map((l) => ({
-            productId: l.product.id,
-            quantity: l.quantity,
-          })),
+          items: lines.map((l) => orderItem(l.item, l.quantity)),
         }),
       });
       const body = await res.json();
@@ -199,33 +216,53 @@ export default function CashierTerminal() {
           ) : (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
               {visible.map((p) => {
-                const left = (stock[p.id] ?? 0) - (cart[p.id] ?? 0);
+                const options = sellables(p);
+                const inStock = options.reduce(
+                  (sum, s) => sum + Math.max(0, left(s.key)),
+                  0,
+                );
+                const prices = options.map((s) => s.price);
+                const lowest = Math.min(...prices);
                 return (
                   <button
                     key={p.id}
-                    disabled={left <= 0}
-                    onClick={() => setQuantity(p.id, (cart[p.id] ?? 0) + 1)}
+                    disabled={inStock <= 0}
+                    onClick={() =>
+                      p.variants
+                        ? setPicking(p)
+                        : setQuantity(p.id, (cart[p.id] ?? 0) + 1)
+                    }
                     className="flex flex-col rounded-lg bg-white p-4 text-left shadow-sm transition hover:shadow-md active:scale-[0.98] disabled:opacity-40"
                   >
                     {p.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={p.imageUrl}
-                      alt=""
-                      className="mb-3 aspect-square w-full rounded-md object-cover"
-                    />
-                  ) : (
-                    <div className="mb-3 flex aspect-square w-full items-center justify-center rounded-md bg-surface-alt text-3xl font-semibold text-brand">
-                      {p.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-xs text-muted">{p.sku}</span>
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.imageUrl}
+                        alt=""
+                        className="mb-3 aspect-square w-full rounded-md object-cover"
+                      />
+                    ) : (
+                      <div className="mb-3 flex aspect-square w-full items-center justify-center rounded-md bg-surface-alt text-3xl font-semibold text-brand">
+                        {p.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="text-xs text-muted">{p.sku}</span>
                     <span className="mt-1 font-medium">{p.name}</span>
+                    {p.variants && (
+                      <span className="mt-1 self-start rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                        {p.variants.length} options
+                      </span>
+                    )}
                     <span className="mt-4 text-lg font-semibold">
-                      {money.format(p.price)}
+                      {lowest < Math.max(...prices) && (
+                        <span className="text-sm font-normal text-muted">
+                          From{" "}
+                        </span>
+                      )}
+                      {money.format(lowest)}
                     </span>
                     <span className="text-xs text-muted">
-                      {left > 0 ? `${left} in stock` : "Out of stock"}
+                      {inStock > 0 ? `${inStock} in stock` : "Out of stock"}
                     </span>
                   </button>
                 );
@@ -259,35 +296,42 @@ export default function CashierTerminal() {
               </div>
             ) : (
               <ul className="divide-y divide-line">
-                {lines.map(({ product, quantity }) => (
-                  <li key={product.id} className="flex items-center gap-3 py-3">
+                {lines.map(({ item, quantity }) => (
+                  <li key={item.key} className="flex items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
-                        {product.name}
+                        {item.product.name}
                       </p>
+                      {item.variant && (
+                        <p className="truncate text-xs font-medium text-brand-deep">
+                          {item.variant.name}
+                        </p>
+                      )}
                       <p className="text-xs text-muted">
-                        {money.format(product.price)} each
+                        {money.format(item.price)} each
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        aria-label={`Remove one ${product.name}`}
-                        onClick={() => setQuantity(product.id, quantity - 1)}
+                        aria-label={`Remove one ${item.name}`}
+                        onClick={() => setQuantity(item.key, quantity - 1)}
                         className="h-8 w-8 rounded-md bg-surface-alt font-semibold hover:bg-brand-soft"
                       >
                         −
                       </button>
-                      <span className="w-6 text-center text-sm">{quantity}</span>
+                      <span className="w-6 text-center text-sm">
+                        {quantity}
+                      </span>
                       <button
-                        aria-label={`Add one ${product.name}`}
-                        onClick={() => setQuantity(product.id, quantity + 1)}
+                        aria-label={`Add one ${item.name}`}
+                        onClick={() => setQuantity(item.key, quantity + 1)}
                         className="h-8 w-8 rounded-md bg-surface-alt font-semibold hover:bg-brand-soft"
                       >
                         +
                       </button>
                     </div>
                     <span className="w-16 text-right text-sm font-medium">
-                      {money.format(product.price * quantity)}
+                      {money.format(item.price * quantity)}
                     </span>
                   </li>
                 ))}
@@ -318,6 +362,59 @@ export default function CashierTerminal() {
           </div>
         </aside>
       </div>
+
+      {picking && (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50 p-6 print:hidden"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPicking(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Choose ${picking.name}`}
+            className="flex max-h-full w-full max-w-lg flex-col rounded-xl bg-white p-6 shadow-xl"
+          >
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">
+              Choose an option
+            </p>
+            <h2 className="mt-1 text-xl font-semibold">{picking.name}</h2>
+            <div className="mt-4 grid gap-2 overflow-y-auto sm:grid-cols-2">
+              {sellables(picking).map((s) => {
+                const remaining = left(s.key);
+                return (
+                  <button
+                    key={s.key}
+                    disabled={remaining <= 0}
+                    onClick={() => {
+                      setQuantity(s.key, (cart[s.key] ?? 0) + 1);
+                      setPicking(null);
+                    }}
+                    className="flex flex-col rounded-lg border-2 border-line p-3 text-left hover:border-brand hover:bg-brand-soft disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent"
+                  >
+                    <span className="font-medium">{s.variant?.name}</span>
+                    <span className="text-xs text-muted">{s.sku}</span>
+                    <span className="mt-2 font-semibold">
+                      {money.format(s.price)}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {remaining > 0 ? `${remaining} in stock` : "Out of stock"}
+                      {cart[s.key] ? ` · ${cart[s.key]} in sale` : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setPicking(null)}
+              className="mt-4 w-full rounded-lg py-2 text-sm text-muted hover:bg-brand-soft"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {step && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-6 print:hidden">
@@ -397,7 +494,8 @@ export default function CashierTerminal() {
                   />
                 </label>
                 <label className="mt-3 block text-sm font-medium">
-                  Email <span className="font-normal text-muted">(optional)</span>
+                  Email{" "}
+                  <span className="font-normal text-muted">(optional)</span>
                   <input
                     type="email"
                     value={customer.email ?? ""}

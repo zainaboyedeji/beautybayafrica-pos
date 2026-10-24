@@ -1,5 +1,6 @@
 import { db, transaction } from "./db";
 import express from "express";
+import type { PoolClient } from "pg";
 import {
   createHmac,
   randomBytes,
@@ -15,6 +16,7 @@ import type {
   OrderItem,
   PaymentMethod,
   Product,
+  ProductVariant,
 } from "@pos/types";
 
 const app = express();
@@ -59,6 +61,45 @@ const toProduct = (row: ProductRow): Product => ({
     ? { imageUrl: row.image_url as CloudinaryUrl }
     : {}),
 });
+
+type VariantRow = {
+  id: string;
+  product_id: string;
+  name: string;
+  sku: string;
+  price: number;
+  cost_price: number | null;
+  barcode: string | null;
+  quantity: number;
+  updated_at: Date;
+};
+
+const toVariant = (row: VariantRow): ProductVariant => ({
+  id: row.id,
+  name: row.name,
+  sku: row.sku,
+  price: row.price,
+  ...(row.cost_price !== null ? { costPrice: row.cost_price } : {}),
+  ...(row.barcode !== null ? { barcode: row.barcode } : {}),
+});
+
+const fetchVariants = async (productIds?: string[]) =>
+  (
+    await db.query<VariantRow>(
+      `SELECT * FROM product_variants
+       WHERE $1::text[] IS NULL OR product_id = ANY($1)
+       ORDER BY position`,
+      [productIds ?? null],
+    )
+  ).rows;
+
+/** Products in the order they were added, each with its options (if any). */
+const withVariants = (rows: ProductRow[], variants: VariantRow[]): Product[] =>
+  rows.map((row) => {
+    const own = variants.filter((v) => v.product_id === row.id);
+    const product = toProduct(row);
+    return own.length > 0 ? { ...product, variants: own.map(toVariant) } : product;
+  });
 
 type CustomerRow = { name: string; phone: string; email: string | null };
 
@@ -317,14 +358,92 @@ app.get("/products", anyone, async (_req, res) => {
   const { rows } = await db.query<ProductRow>(
     "SELECT * FROM products ORDER BY created_at",
   );
-  res.json(rows.map(toProduct));
+  res.json(withVariants(rows, await fetchVariants()));
 });
 
-type ProductInput = Omit<Product, "id"> & { quantity: number };
+type VariantInput = Omit<ProductVariant, "id"> & {
+  /** Set when editing an option that already exists. */
+  id?: string;
+  quantity: number;
+};
+
+type ProductInput = Omit<Product, "id" | "variants"> & {
+  quantity: number;
+  variants: VariantInput[];
+};
+
+// Validates the options sent with a product. Returns an error message when
+// one is invalid.
+const readVariants = (raw: unknown, productSku: string): VariantInput[] | string => {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return "Options must be a list";
+  const variants: VariantInput[] = [];
+  for (const [index, body] of raw.entries()) {
+    const label = `Option ${index + 1}`;
+    const name = String(body?.name ?? "").trim();
+    const sku = String(body?.sku ?? "").trim();
+    const price = Number(body?.price);
+    const quantity = Number(body?.quantity);
+    const rawCost = body?.costPrice;
+    const hasCost = rawCost !== undefined && rawCost !== null && rawCost !== "";
+    const costPrice = Number(rawCost);
+    const barcode = String(body?.barcode ?? "").trim();
+    const id = String(body?.id ?? "").trim();
+
+    if (!name || !sku) return `${label}: name and SKU are required`;
+    if (!(price >= 0) || !Number.isInteger(quantity) || quantity < 0)
+      return `${label}: price and quantity must be valid, non-negative numbers`;
+    if (hasCost && !(costPrice >= 0)) return `${label}: cost price must be a valid number`;
+    if (variants.some((v) => v.name.toLowerCase() === name.toLowerCase()))
+      return `Two options are called ${name}`;
+    if (sku === productSku || variants.some((v) => v.sku === sku))
+      return `SKU ${sku} is used more than once in this product`;
+    if (barcode && variants.some((v) => v.barcode === barcode))
+      return `Barcode ${barcode} is used more than once in this product`;
+
+    variants.push({
+      ...(id ? { id } : {}),
+      name,
+      sku,
+      price,
+      quantity,
+      ...(hasCost ? { costPrice } : {}),
+      ...(barcode ? { barcode } : {}),
+    });
+  }
+  return variants;
+};
 
 // Validates a product sent by the add / edit forms. Returns an error message
 // when the input is invalid.
 const readProductInput = (body: any): ProductInput | string => {
+  const sku = String(body?.sku ?? "").trim();
+  const variants = readVariants(body?.variants, sku);
+  if (typeof variants === "string") return variants;
+  // With options, the product's own price, stock, cost and barcode come from
+  // (or belong to) its options instead.
+  if (variants.length > 0) {
+    const name = String(body?.name ?? "").trim();
+    if (!sku || !name) return "SKU and name are required";
+    const imageUrl = String(body?.imageUrl ?? "").trim();
+    if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/"))
+      return "Image link must start with https://res.cloudinary.com/";
+    return {
+      sku,
+      name,
+      price: Math.min(...variants.map((v) => v.price)),
+      quantity: 0,
+      variants,
+      ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
+    };
+  }
+  const product = readSimpleProduct(body);
+  return typeof product === "string" ? product : { ...product, variants: [] };
+};
+
+const readSimpleProduct = (
+  body: any,
+): Omit<ProductInput, "variants"> | string => {
   const sku = String(body?.sku ?? "").trim();
   const name = String(body?.name ?? "").trim();
   const price = Number(body?.price);
@@ -353,20 +472,78 @@ const readProductInput = (body: any): ProductInput | string => {
   };
 };
 
-// SKUs and barcodes must be unique; `exceptId` is the product being edited.
+// SKUs and barcodes must be unique across products and their options, so a
+// scan finds one thing. `exceptId` is the product being edited.
 const findConflict = async (input: ProductInput, exceptId = "") => {
-  const { rows } = await db.query<{ sku: string; barcode: string | null }>(
-    "SELECT sku, barcode FROM products WHERE id <> $1 AND (sku = $2 OR barcode = $3)",
-    [exceptId, input.sku, input.barcode ?? null],
+  const skus = [input.sku, ...input.variants.map((v) => v.sku)];
+  const barcodes = [input.barcode, ...input.variants.map((v) => v.barcode)].filter(
+    (b): b is string => b !== undefined,
   );
-  if (rows.some((p) => p.sku === input.sku))
-    return `A product with SKU ${input.sku} already exists`;
-  if (rows.length > 0)
-    return `A product with barcode ${input.barcode} already exists`;
+  const { rows } = await db.query<{ sku: string; barcode: string | null }>(
+    `SELECT sku, barcode FROM products
+       WHERE id <> $1 AND (sku = ANY($2) OR barcode = ANY($3))
+     UNION ALL
+     SELECT sku, barcode FROM product_variants
+       WHERE product_id <> $1 AND (sku = ANY($2) OR barcode = ANY($3))`,
+    [exceptId, skus, barcodes],
+  );
+  const sku = skus.find((s) => rows.some((r) => r.sku === s));
+  if (sku) return `A product with SKU ${sku} already exists`;
+  const barcode = barcodes.find((b) => rows.some((r) => r.barcode === b));
+  if (barcode) return `A product with barcode ${barcode} already exists`;
   return null;
 };
 
-const productValues = (input: ProductInput) => [
+/**
+ * Makes the product's options match `variants`: missing ones are removed,
+ * known ones updated and the rest added. Ids that aren't this product's
+ * options are treated as new.
+ */
+const saveVariants = async (
+  client: PoolClient,
+  productId: string,
+  variants: VariantInput[],
+) => {
+  const existing = new Set(
+    (
+      await client.query<{ id: string }>(
+        "SELECT id FROM product_variants WHERE product_id = $1",
+        [productId],
+      )
+    ).rows.map((r) => r.id),
+  );
+  const ids = variants.map((v) =>
+    v.id && existing.has(v.id) ? v.id : randomUUID(),
+  );
+  await client.query(
+    "DELETE FROM product_variants WHERE product_id = $1 AND NOT (id = ANY($2))",
+    [productId, ids],
+  );
+  for (const [position, variant] of variants.entries()) {
+    await client.query(
+      `INSERT INTO product_variants
+         (id, product_id, name, sku, price, cost_price, barcode, quantity, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, sku = EXCLUDED.sku,
+         price = EXCLUDED.price, cost_price = EXCLUDED.cost_price,
+         barcode = EXCLUDED.barcode, quantity = EXCLUDED.quantity,
+         position = EXCLUDED.position, updated_at = now()`,
+      [
+        ids[position],
+        productId,
+        variant.name,
+        variant.sku,
+        variant.price,
+        variant.costPrice ?? null,
+        variant.barcode ?? null,
+        variant.quantity,
+        position,
+      ],
+    );
+  }
+};
+
+const productValues = (input: Omit<ProductInput, "variants">) => [
   input.sku,
   input.name,
   input.price,
@@ -388,12 +565,18 @@ app.post("/products", adminOnly, async (req, res) => {
     return;
   }
 
-  const { rows } = await db.query<ProductRow>(
-    `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [...productValues(input), randomUUID()],
-  );
-  res.status(201).json(toProduct(rows[0]));
+  const product = await transaction(async (client) => {
+    const { rows } = await client.query<ProductRow>(
+      `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [...productValues(input), randomUUID()],
+    );
+    await saveVariants(client, rows[0].id, input.variants);
+    return rows[0];
+  });
+  res
+    .status(201)
+    .json(withVariants([product], await fetchVariants([product.id]))[0]);
 });
 
 app.put("/products/:id", adminOnly, async (req, res) => {
@@ -411,27 +594,44 @@ app.put("/products/:id", adminOnly, async (req, res) => {
 
   // Past orders keep their own copy of the name and prices, so they are
   // unaffected. Optional fields left empty are removed.
-  const { rows } = await db.query<ProductRow>(
-    `UPDATE products SET sku = $1, name = $2, price = $3, cost_price = $4,
-       barcode = $5, image_url = $6, quantity = $7, updated_at = now()
-     WHERE id = $8 RETURNING *`,
-    [...productValues(input), id],
-  );
-  if (rows.length === 0) {
-    res.status(404).json({ error: "Product not found" });
-    return;
-  }
-  res.json(toProduct(rows[0]));
+  const product = await transaction(async (client) => {
+    const { rows } = await client.query<ProductRow>(
+      `UPDATE products SET sku = $1, name = $2, price = $3, cost_price = $4,
+         barcode = $5, image_url = $6, quantity = $7, updated_at = now()
+       WHERE id = $8 RETURNING *`,
+      [...productValues(input), id],
+    );
+    if (rows.length === 0) throw new HttpError(404, "Product not found");
+    await saveVariants(client, id, input.variants);
+    return rows[0];
+  });
+  res.json(withVariants([product], await fetchVariants([id]))[0]);
 });
 
 app.get("/inventory", anyone, async (_req, res) => {
-  const { rows } = await db.query<ProductRow>(
-    "SELECT id, quantity, updated_at FROM products ORDER BY created_at",
+  // A product with options reports their total, followed by one row each.
+  const { rows } = await db.query<{
+    product_id: string;
+    variant_id: string | null;
+    quantity: number;
+    updated_at: Date;
+  }>(
+    `SELECT p.id AS product_id, NULL AS variant_id,
+            COALESCE(v.quantity, p.quantity) AS quantity,
+            GREATEST(p.updated_at, v.updated_at) AS updated_at
+     FROM products p
+     LEFT JOIN (
+       SELECT product_id, sum(quantity)::int AS quantity, max(updated_at) AS updated_at
+       FROM product_variants GROUP BY product_id
+     ) v ON v.product_id = p.id
+     UNION ALL
+     SELECT product_id, id, quantity, updated_at FROM product_variants`,
   );
   res.json(
     rows.map(
       (row): Inventory => ({
-        productId: row.id,
+        productId: row.product_id,
+        ...(row.variant_id !== null ? { variantId: row.variant_id } : {}),
         quantity: row.quantity,
         updatedAt: row.updated_at.toISOString(),
       }),
@@ -478,9 +678,22 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
       )
     ).rows.map((p) => [p.barcode, p.sku]),
   );
+  // Options are edited in the app, not by CSV, so their SKUs and barcodes
+  // and the products that have them are left alone.
+  const variants = await fetchVariants();
+  const variantSkus = new Set(variants.map((v) => v.sku));
+  const variantBarcodes = new Set(variants.flatMap((v) => v.barcode ?? []));
+  const skusWithOptions = new Set(
+    (
+      await db.query<{ sku: string }>(
+        `SELECT sku FROM products p
+         WHERE EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id)`,
+      )
+    ).rows.map((p) => p.sku),
+  );
 
   const errors: { row: number; message: string }[] = [];
-  const valid: ProductInput[] = [];
+  const valid: Omit<ProductInput, "variants">[] = [];
   const seen = new Set<string>();
   const seenBarcodes = new Set<string>();
   rows.slice(1).forEach((cells, index) => {
@@ -499,6 +712,12 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
 
     if (!sku) return fail("SKU is empty");
     if (seen.has(sku)) return fail(`SKU ${sku} appears more than once`);
+    if (variantSkus.has(sku))
+      return fail(`SKU ${sku} belongs to a product option; edit it in the app`);
+    if (skusWithOptions.has(sku))
+      return fail(`Product ${sku} has options; edit it in the app`);
+    if (barcode && variantBarcodes.has(barcode))
+      return fail(`Barcode ${barcode} belongs to a product option`);
     if (!name) return fail("Name is empty");
     if (barcode && seenBarcodes.has(barcode))
       return fail(`Barcode ${barcode} appears more than once`);
@@ -613,7 +832,8 @@ app.get("/orders", adminOnly, async (_req, res) => {
     items: OrderItem[];
   }>(
     `SELECT o.*, json_agg(json_strip_nulls(json_build_object(
-         'productId', i.product_id, 'name', i.name, 'quantity', i.quantity,
+         'productId', i.product_id, 'variantId', i.variant_id,
+         'name', i.name, 'quantity', i.quantity,
          'unitPrice', i.unit_price, 'unitCost', i.unit_cost)) ORDER BY i.line) AS items
      FROM orders o JOIN order_items i ON i.order_id = o.id
      GROUP BY o.id ORDER BY o.created_at`,
@@ -635,6 +855,42 @@ app.get("/orders", adminOnly, async (_req, res) => {
     ),
   );
 });
+
+/** Takes `quantity` of one option out of stock and returns its sale line. */
+const takeVariant = async (
+  client: PoolClient,
+  productId: string,
+  variantId: string,
+  quantity: number,
+): Promise<OrderItem> => {
+  const { rows } = await client.query<VariantRow & { product_name: string }>(
+    `UPDATE product_variants v SET quantity = v.quantity - $3, updated_at = now()
+     FROM products p
+     WHERE v.id = $2 AND v.product_id = $1 AND p.id = v.product_id
+       AND v.quantity >= $3
+     RETURNING v.*, p.name AS product_name`,
+    [productId, variantId, quantity],
+  );
+  if (rows.length === 0) {
+    const found = await client.query<{ name: string }>(
+      `SELECT p.name || ' — ' || v.name AS name FROM product_variants v
+       JOIN products p ON p.id = v.product_id WHERE v.id = $2 AND v.product_id = $1`,
+      [productId, variantId],
+    );
+    throw found.rows.length
+      ? new HttpError(409, `Not enough stock for ${found.rows[0].name}`)
+      : new HttpError(400, "Invalid order item");
+  }
+  const variant = rows[0];
+  return {
+    productId,
+    variantId,
+    name: `${variant.product_name} — ${variant.name}`,
+    quantity,
+    unitPrice: variant.price,
+    ...(variant.cost_price !== null ? { unitCost: variant.cost_price } : {}),
+  };
+};
 
 app.post("/orders", anyone, async (req, res) => {
   const requested: unknown = req.body?.items;
@@ -674,22 +930,32 @@ app.post("/orders", anyone, async (req, res) => {
     const items: OrderItem[] = [];
     for (const line of requested) {
       const productId = String(line?.productId ?? "");
+      const variantId = String(line?.variantId ?? "");
       const quantity = Number(line?.quantity);
       if (!Number.isInteger(quantity) || quantity <= 0)
         throw new HttpError(400, "Invalid order item");
+      if (variantId) {
+        items.push(await takeVariant(client, productId, variantId, quantity));
+        continue;
+      }
       const { rows } = await client.query<ProductRow>(
         `UPDATE products SET quantity = quantity - $2, updated_at = now()
          WHERE id = $1 AND quantity >= $2 RETURNING *`,
         [productId, quantity],
       );
       if (rows.length === 0) {
-        const found = await client.query<{ name: string }>(
-          "SELECT name FROM products WHERE id = $1",
+        const found = await client.query<{ name: string; has_options: boolean }>(
+          `SELECT name, EXISTS (SELECT 1 FROM product_variants WHERE product_id = $1)
+             AS has_options
+           FROM products WHERE id = $1`,
           [productId],
         );
-        throw found.rows.length
-          ? new HttpError(409, `Not enough stock for ${found.rows[0].name}`)
-          : new HttpError(400, "Invalid order item");
+        const product = found.rows[0];
+        throw !product
+          ? new HttpError(400, "Invalid order item")
+          : product.has_options
+            ? new HttpError(400, `Choose an option for ${product.name}`)
+            : new HttpError(409, `Not enough stock for ${product.name}`);
       }
       const product = rows[0];
       items.push({
@@ -717,12 +983,13 @@ app.post("/orders", anyone, async (req, res) => {
     );
     for (const [line, item] of items.entries()) {
       await client.query(
-        `INSERT INTO order_items (order_id, line, product_id, name, quantity, unit_price, unit_cost)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO order_items (order_id, line, product_id, variant_id, name, quantity, unit_price, unit_cost)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           order.id,
           line,
           item.productId,
+          item.variantId ?? null,
           item.name,
           item.quantity,
           item.unitPrice,

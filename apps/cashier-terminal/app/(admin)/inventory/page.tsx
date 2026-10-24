@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { Product } from "@pos/types";
+import { Fragment, useState } from "react";
+import type { Product, ProductVariant } from "@pos/types";
 import ActionModals, {
   Notice,
   type ActionModal,
@@ -86,10 +86,10 @@ export default function InventoryPage() {
         }}
       />
       {editing && (
-        <Modal title="Edit product" onClose={() => setEditing(null)}>
+        <Modal title="Edit product" onClose={() => setEditing(null)} wide>
           <AddProductForm
             product={editing}
-            quantity={catalog.data?.stock[editing.id] ?? 0}
+            stock={catalog.data?.stock}
             onCancel={() => setEditing(null)}
             onSaved={(message) => {
               setEditing(null);
@@ -108,14 +108,13 @@ export default function InventoryPage() {
             <code className="rounded bg-surface-alt px-1">sku</code>,{" "}
             <code className="rounded bg-surface-alt px-1">name</code>,{" "}
             <code className="rounded bg-surface-alt px-1">price</code> and{" "}
-            <code className="rounded bg-surface-alt px-1">quantity</code>, plus an
-            optional{" "}
+            <code className="rounded bg-surface-alt px-1">quantity</code>, plus
+            an optional{" "}
             <code className="rounded bg-surface-alt px-1">barcode</code>,{" "}
             <code className="rounded bg-surface-alt px-1">cost_price</code> and{" "}
             <code className="rounded bg-surface-alt px-1">image_url</code>{" "}
-            (Cloudinary link).
-            Products are matched by SKU: existing ones are updated, new ones
-            are added.
+            (Cloudinary link). Products are matched by SKU: existing ones are
+            updated, new ones are added.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="cursor-pointer rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-brand-hover">
@@ -189,55 +188,102 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {catalog.data.products.map((p) => (
-                <tr key={p.id}>
-                  <td className="px-4 py-2">
-                    {p.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.imageUrl}
-                        alt=""
-                        className="h-10 w-10 rounded-md object-cover"
-                      />
-                    ) : (
-                      <div className="h-10 w-10 rounded-md bg-surface-alt" />
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted">{p.sku}</td>
-                  <td className="px-4 py-3 text-muted">
-                    {p.barcode ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 font-medium">{p.name}</td>
-                  <td className="px-4 py-3 text-right">
-                    {p.costPrice !== undefined
-                      ? money.format(p.costPrice)
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {money.format(p.price)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {p.costPrice !== undefined && p.price > 0
-                      ? `${Math.round(((p.price - p.costPrice) / p.price) * 100)}%`
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {catalog.data?.stock[p.id] ?? 0}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setEditing(p)}
-                      className="font-medium text-brand-deep hover:underline"
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {catalog.data.products.map((p) => {
+                const stock = catalog.data?.stock ?? {};
+                const prices = p.variants?.map((v) => v.price) ?? [];
+                return (
+                  <Fragment key={p.id}>
+                    <tr>
+                      <td className="px-4 py-2">
+                        {p.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.imageUrl}
+                            alt=""
+                            className="h-10 w-10 rounded-md object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-md bg-surface-alt" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-muted">{p.sku}</td>
+                      <td className="px-4 py-3 text-muted">
+                        {p.barcode ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        {p.name}
+                        {p.variants && (
+                          <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                            {p.variants.length} options
+                          </span>
+                        )}
+                      </td>
+                      {p.variants ? (
+                        <>
+                          <td className="px-4 py-3 text-right">—</td>
+                          <td className="px-4 py-3 text-right">
+                            {Math.min(...prices) === Math.max(...prices)
+                              ? money.format(prices[0])
+                              : `${money.format(Math.min(...prices))} – ${money.format(Math.max(...prices))}`}
+                          </td>
+                          <td className="px-4 py-3 text-right">—</td>
+                        </>
+                      ) : (
+                        <PriceCells item={p} />
+                      )}
+                      <td className="px-4 py-3 text-right">
+                        {stock[p.id] ?? 0}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => setEditing(p)}
+                          className="font-medium text-brand-deep hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                    {p.variants?.map((v) => (
+                      <tr key={v.id} className="bg-surface-alt/50">
+                        <td />
+                        <td className="px-4 py-2 text-muted">{v.sku}</td>
+                        <td className="px-4 py-2 text-muted">
+                          {v.barcode ?? "—"}
+                        </td>
+                        <td className="px-4 py-2 pl-8">
+                          <span className="text-muted">↳</span> {v.name}
+                        </td>
+                        <PriceCells item={v} />
+                        <td className="px-4 py-2 text-right">
+                          {stock[v.id] ?? 0}
+                        </td>
+                        <td />
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
     </div>
+  );
+}
+
+/** Cost, selling price and margin cells for a product or option. */
+function PriceCells({ item }: { item: Product | ProductVariant }) {
+  return (
+    <>
+      <td className="px-4 py-3 text-right">
+        {item.costPrice !== undefined ? money.format(item.costPrice) : "—"}
+      </td>
+      <td className="px-4 py-3 text-right">{money.format(item.price)}</td>
+      <td className="px-4 py-3 text-right">
+        {item.costPrice !== undefined && item.price > 0
+          ? `${Math.round(((item.price - item.costPrice) / item.price) * 100)}%`
+          : "—"}
+      </td>
+    </>
   );
 }

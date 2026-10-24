@@ -12,6 +12,7 @@ import {
   fetchCustomers,
   fetchOrders,
   money,
+  sellables,
   useLoad,
 } from "../lib/api";
 import { LoadError, Loading } from "../lib/status";
@@ -51,7 +52,10 @@ export default function Dashboard() {
     (sum, i) => sum + (i.unitPrice - (i.unitCost ?? 0)) * i.quantity,
     0,
   );
-  const lowStock = products.filter((p) => (stock[p.id] ?? 0) <= LOW_STOCK);
+  // Each option counts on its own, so one shade running out shows up.
+  const lowStock = products
+    .flatMap(sellables)
+    .filter((s) => (stock[s.key] ?? 0) <= LOW_STOCK);
 
   const tiles = [
     { label: "Gross sales", value: money.format(grossSales) },
@@ -160,10 +164,10 @@ export default function Dashboard() {
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-line text-sm">
-              {lowStock.slice(0, 8).map((p) => (
-                <li key={p.id} className="flex justify-between py-2">
-                  <span>{p.name}</span>
-                  <span className="font-medium">{stock[p.id] ?? 0} left</span>
+              {lowStock.slice(0, 8).map((s) => (
+                <li key={s.key} className="flex justify-between py-2">
+                  <span>{s.name}</span>
+                  <span className="font-medium">{stock[s.key] ?? 0} left</span>
                 </li>
               ))}
               {lowStock.length > 8 && (

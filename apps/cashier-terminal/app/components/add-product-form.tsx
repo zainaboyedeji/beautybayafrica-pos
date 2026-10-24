@@ -30,19 +30,59 @@ const FIELDS = [
   },
 ] as const;
 
+// With options, these belong to each option instead of the product.
+const PER_OPTION_FIELDS = new Set([
+  "barcode",
+  "costPrice",
+  "price",
+  "quantity",
+]);
+
+type OptionForm = {
+  /** Set for options that already exist, so their sales history lines up. */
+  id?: string;
+  name: string;
+  sku: string;
+  barcode: string;
+  costPrice: string;
+  price: string;
+  quantity: string;
+};
+
+const OPTION_FIELDS = [
+  { key: "name", label: "Option", type: "text", required: true, wide: true },
+  { key: "sku", label: "SKU", type: "text", required: true },
+  { key: "barcode", label: "Barcode", type: "text", required: false },
+  { key: "costPrice", label: "Cost price", type: "number", required: false },
+  { key: "price", label: "Selling price", type: "number", required: true },
+  { key: "quantity", label: "Quantity", type: "number", required: true },
+] as const;
+
+// Scanners press Enter after the code; move on instead of submitting.
+const nextFieldOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const inputs = [
+    ...(e.currentTarget.form?.querySelectorAll<HTMLInputElement>("input") ??
+      []),
+  ];
+  inputs[inputs.indexOf(e.currentTarget) + 1]?.focus();
+};
+
 type Props = {
   onSaved: (message: string) => void;
   onCancel: () => void;
   /** When given, the form edits this product instead of adding a new one. */
   product?: Product;
-  quantity?: number;
+  /** Current stock by product or option id. */
+  stock?: Record<string, number>;
 };
 
 export default function AddProductForm({
   onSaved,
   onCancel,
   product,
-  quantity,
+  stock = {},
 }: Props) {
   const [form, setForm] = useState(
     product
@@ -52,13 +92,52 @@ export default function AddProductForm({
           name: product.name,
           costPrice: product.costPrice?.toString() ?? "",
           price: product.price.toString(),
-          quantity: (quantity ?? 0).toString(),
+          quantity: (stock[product.id] ?? 0).toString(),
           imageUrl: product.imageUrl ?? "",
         }
       : EMPTY_FORM,
   );
+  const [options, setOptions] = useState<OptionForm[]>(
+    (product?.variants ?? []).map((v) => ({
+      id: v.id,
+      name: v.name,
+      sku: v.sku,
+      barcode: v.barcode ?? "",
+      costPrice: v.costPrice?.toString() ?? "",
+      price: v.price.toString(),
+      quantity: (stock[v.id] ?? 0).toString(),
+    })),
+  );
+  const hasOptions = options.length > 0;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const newOption = (n: number): OptionForm => ({
+    name: "",
+    sku: form.sku.trim() ? `${form.sku.trim()}-${n}` : "",
+    barcode: "",
+    costPrice: form.costPrice,
+    price: form.price,
+    quantity: "",
+  });
+
+  const toggleOptions = (on: boolean) => {
+    if (!on) {
+      setOptions([]);
+      return;
+    }
+    // Start from the product's own details, so they aren't retyped.
+    setOptions([
+      {
+        ...newOption(1),
+        barcode: form.barcode,
+        quantity: form.quantity,
+      },
+    ]);
+  };
+
+  const updateOption = (index: number, change: Partial<OptionForm>) =>
+    setOptions(options.map((o, i) => (i === index ? { ...o, ...change } : o)));
 
   const submit = async () => {
     setSaving(true);
@@ -72,17 +151,35 @@ export default function AddProductForm({
           body: JSON.stringify({
             sku: form.sku,
             name: form.name,
-            price: Number(form.price),
-            quantity: Number(form.quantity),
-            ...(form.barcode.trim() !== ""
-              ? { barcode: form.barcode.trim() }
-              : {}),
-            ...(form.costPrice !== ""
-              ? { costPrice: Number(form.costPrice) }
-              : {}),
             ...(form.imageUrl.trim() !== ""
               ? { imageUrl: form.imageUrl.trim() }
               : {}),
+            ...(hasOptions
+              ? {
+                  variants: options.map((o) => ({
+                    ...(o.id ? { id: o.id } : {}),
+                    name: o.name,
+                    sku: o.sku,
+                    price: Number(o.price),
+                    quantity: Number(o.quantity),
+                    ...(o.barcode.trim() !== ""
+                      ? { barcode: o.barcode.trim() }
+                      : {}),
+                    ...(o.costPrice !== ""
+                      ? { costPrice: Number(o.costPrice) }
+                      : {}),
+                  })),
+                }
+              : {
+                  price: Number(form.price),
+                  quantity: Number(form.quantity),
+                  ...(form.barcode.trim() !== ""
+                    ? { barcode: form.barcode.trim() }
+                    : {}),
+                  ...(form.costPrice !== ""
+                    ? { costPrice: Number(form.costPrice) }
+                    : {}),
+                }),
           }),
         },
       );
@@ -103,59 +200,52 @@ export default function AddProductForm({
         void submit();
       }}
     >
-      {FIELDS.map((field, index) => (
-        <label
-          key={field.key}
-          className={`text-sm font-medium ${
-            field.key === "name" ||
-            field.key === "sku" ||
-            field.key === "barcode"
-              ? "col-span-2"
-              : ""
-          } ${field.key === "quantity" || field.key === "imageUrl" ? "col-span-2" : ""}`}
-        >
-          {field.label}
-          {!field.required && (
-            <span className="font-normal text-muted"> (optional)</span>
-          )}
-          <input
-            autoFocus={index === 0}
-            type={field.type}
-            required={field.required}
-            min={field.type === "number" ? 0 : undefined}
-            step={
-              field.key === "quantity"
-                ? 1
-                : field.type === "number"
-                  ? "any"
-                  : undefined
-            }
-            placeholder={
-              field.key === "imageUrl"
-                ? "https://res.cloudinary.com/…"
-                : field.key === "barcode"
-                  ? "Scan or type the barcode"
-                  : undefined
-            }
-            onKeyDown={
-              // Scanners press Enter after the code; don't submit the form.
+      {FIELDS.filter((f) => !(hasOptions && PER_OPTION_FIELDS.has(f.key))).map(
+        (field, index) => (
+          <label
+            key={field.key}
+            className={`text-sm font-medium ${
+              field.key === "name" ||
+              field.key === "sku" ||
               field.key === "barcode"
-                ? (e) => {
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    e.currentTarget.form
-                      ?.querySelector<HTMLInputElement>("input[name=name]")
-                      ?.focus();
-                  }
-                : undefined
-            }
-            name={field.key}
-            value={form[field.key]}
-            onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-            className={INPUT}
-          />
-        </label>
-      ))}
+                ? "col-span-2"
+                : ""
+            } ${field.key === "quantity" || field.key === "imageUrl" ? "col-span-2" : ""}`}
+          >
+            {field.label}
+            {!field.required && (
+              <span className="font-normal text-muted"> (optional)</span>
+            )}
+            <input
+              autoFocus={index === 0}
+              type={field.type}
+              required={field.required}
+              min={field.type === "number" ? 0 : undefined}
+              step={
+                field.key === "quantity"
+                  ? 1
+                  : field.type === "number"
+                    ? "any"
+                    : undefined
+              }
+              placeholder={
+                field.key === "imageUrl"
+                  ? "https://res.cloudinary.com/…"
+                  : field.key === "barcode"
+                    ? "Scan or type the barcode"
+                    : undefined
+              }
+              onKeyDown={field.key === "barcode" ? nextFieldOnEnter : undefined}
+              name={field.key}
+              value={form[field.key]}
+              onChange={(e) =>
+                setForm({ ...form, [field.key]: e.target.value })
+              }
+              className={INPUT}
+            />
+          </label>
+        ),
+      )}
       {form.imageUrl.trim().startsWith("https://res.cloudinary.com/") && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -164,6 +254,88 @@ export default function AddProductForm({
           className="col-span-2 h-32 w-32 rounded-lg border border-line object-cover"
         />
       )}
+
+      <label className="col-span-2 mt-1 flex items-center gap-2 text-sm font-medium">
+        <input
+          type="checkbox"
+          checked={hasOptions}
+          onChange={(e) => toggleOptions(e.target.checked)}
+          className="h-4 w-4 accent-brand-deep"
+        />
+        Comes in options, such as shades or sizes
+      </label>
+
+      {hasOptions && (
+        <div className="col-span-2 space-y-3">
+          <p className="text-sm text-muted">
+            Each option has its own SKU, price and stock. The till asks which
+            option the customer wants.
+          </p>
+          {options.map((option, index) => (
+            <fieldset
+              key={option.id ?? `new-${index}`}
+              className="grid grid-cols-4 gap-3 rounded-lg border border-line p-3"
+            >
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">
+                Option {index + 1}
+              </legend>
+              {OPTION_FIELDS.map((field) => (
+                <label
+                  key={field.key}
+                  className={`text-sm font-medium ${"wide" in field ? "col-span-2" : ""}`}
+                >
+                  {field.label}
+                  {!field.required && (
+                    <span className="font-normal text-muted"> (optional)</span>
+                  )}
+                  <input
+                    type={field.type}
+                    required={field.required}
+                    min={field.type === "number" ? 0 : undefined}
+                    step={
+                      field.key === "quantity"
+                        ? 1
+                        : field.type === "number"
+                          ? "any"
+                          : undefined
+                    }
+                    placeholder={
+                      field.key === "name" ? "e.g. Ruby Red or 50ml" : undefined
+                    }
+                    onKeyDown={
+                      field.key === "barcode" ? nextFieldOnEnter : undefined
+                    }
+                    value={option[field.key]}
+                    onChange={(e) =>
+                      updateOption(index, { [field.key]: e.target.value })
+                    }
+                    className={INPUT}
+                  />
+                </label>
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  setOptions(options.filter((_, i) => i !== index))
+                }
+                className="self-end rounded-md py-2 text-sm text-muted hover:bg-brand-soft"
+              >
+                Remove
+              </button>
+            </fieldset>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setOptions([...options, newOption(options.length + 1)])
+            }
+            className="text-sm font-medium text-brand-deep underline"
+          >
+            + Add another option
+          </button>
+        </div>
+      )}
+
       {error && <p className="col-span-2 text-sm text-red-700">{error}</p>}
       <div className="col-span-2 mt-2 flex justify-end gap-3">
         <button type="button" onClick={onCancel} className={SECONDARY_BUTTON}>
