@@ -1,9 +1,18 @@
 import type { Order, PaymentMethod } from "@pos/types";
 import { money } from "../lib/api";
 
-const SHOP_NAME = process.env.NEXT_PUBLIC_SHOP_NAME ?? "Receipt";
-const SHOP_ADDRESS = process.env.NEXT_PUBLIC_SHOP_ADDRESS;
-const SHOP_PHONE = process.env.NEXT_PUBLIC_SHOP_PHONE;
+const SHOP_NAME = process.env.NEXT_PUBLIC_SHOP_NAME ?? "Beauty Bay Africa";
+const SHOP_ADDRESS =
+  process.env.NEXT_PUBLIC_SHOP_ADDRESS ??
+  "112 Herbert Macaulay Way, Ebute Metta East, Lagos, Nigeria";
+const SHOP_PHONE = process.env.NEXT_PUBLIC_SHOP_PHONE ?? "0816 259 8682";
+const SHOP_WEBSITE = process.env.NEXT_PUBLIC_SHOP_WEBSITE ?? "beautybayafrica.com";
+const SHOP_INSTAGRAM =
+  process.env.NEXT_PUBLIC_SHOP_INSTAGRAM ?? "@beautybayafrica";
+const SHOP_WHATSAPP =
+  process.env.NEXT_PUBLIC_SHOP_WHATSAPP ?? "+234 816 259 8682";
+// Optional footer line, e.g. a returns policy.
+const RECEIPT_NOTE = process.env.NEXT_PUBLIC_RECEIPT_NOTE;
 
 // Printable width for each paper roll; thermal printers leave a margin.
 const PAPER_WIDTHS: Record<string, string> = { "58": "48mm", "80": "72mm" };
@@ -15,39 +24,92 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   card: "Card",
 };
 
+/** A dashed rule with the logo's four-point star in the middle. */
+function Divider() {
+  return (
+    <div className="my-2 flex items-center gap-2">
+      <span className="flex-1 border-t border-dashed border-black" />
+      <span className="text-[10px]">✦</span>
+      <span className="flex-1 border-t border-dashed border-black" />
+    </div>
+  );
+}
+
 type Props = { order: Order; productNames: Record<string, string> };
 
 /** Hidden on screen; it is the only thing on the page when printing. */
 export default function Receipt({ order, productNames }: Props) {
+  const createdAt = new Date(order.createdAt);
+  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
   return (
     <div
       className="hidden bg-white font-mono text-[11px] leading-snug text-black print:block"
       style={{ width: PAPER_WIDTH }}
     >
       <style>{`@page { margin: 0; } @media print { html, body { background: #fff; } }`}</style>
-      <div className="px-1 py-2">
+      <div className="px-1 py-3">
         <div className="text-center">
-          <p className="text-sm font-bold">{SHOP_NAME}</p>
+          {/* Black-only logo: thermal printers can't print the pink. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mono.png" alt="" className="mx-auto h-12 w-12" />
+          <p className="mt-2 font-display text-lg font-bold tracking-wide">
+            {SHOP_NAME}
+          </p>
           {SHOP_ADDRESS && <p>{SHOP_ADDRESS}</p>}
           {SHOP_PHONE && <p>Tel: {SHOP_PHONE}</p>}
+          <p>{SHOP_WEBSITE}</p>
         </div>
 
-        <div className="mt-2 border-t border-dashed border-black pt-1">
-          <p>{new Date(order.createdAt).toLocaleString("en-NG")}</p>
-          <p>Receipt #{order.id.slice(0, 8).toUpperCase()}</p>
-          <p>Customer: {order.customer.name}</p>
+        <Divider />
+
+        <p className="text-center text-xs font-bold tracking-[0.3em]">
+          SALES RECEIPT
+        </p>
+        <div className="mt-1">
+          <p className="flex justify-between">
+            <span>Receipt</span>
+            <span>#{order.id.slice(0, 8).toUpperCase()}</span>
+          </p>
+          <p className="flex justify-between">
+            <span>Date</span>
+            <span>{createdAt.toLocaleDateString("en-NG")}</span>
+          </p>
+          <p className="flex justify-between">
+            <span>Time</span>
+            <span>
+              {createdAt.toLocaleTimeString("en-NG", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </p>
+          <p className="flex justify-between gap-2">
+            <span>Customer</span>
+            <span className="text-right">{order.customer.name}</span>
+          </p>
         </div>
 
-        <table className="mt-1 w-full border-t border-dashed border-black">
+        <Divider />
+
+        <table className="w-full">
+          <thead>
+            <tr className="text-[10px] font-bold">
+              <td>ITEM</td>
+              <td className="text-right">AMOUNT</td>
+            </tr>
+          </thead>
           <tbody>
             {order.items.map((item, index) => (
               <tr key={index} className="align-top">
-                <td className="pt-1">
-                  {item.name ?? productNames[item.productId] ?? "Item"}
+                <td className="pt-1.5 pr-2">
+                  <span className="font-bold">
+                    {item.name ?? productNames[item.productId] ?? "Item"}
+                  </span>
                   <br />
                   {item.quantity} × {money.format(item.unitPrice)}
                 </td>
-                <td className="pt-1 text-right whitespace-nowrap">
+                <td className="pt-1.5 text-right whitespace-nowrap">
                   {money.format(item.unitPrice * item.quantity)}
                 </td>
               </tr>
@@ -55,18 +117,33 @@ export default function Receipt({ order, productNames }: Props) {
           </tbody>
         </table>
 
-        <div className="mt-1 border-t border-dashed border-black pt-1">
-          <p className="flex justify-between text-sm font-bold">
-            <span>TOTAL</span>
-            <span>{money.format(order.total)}</span>
-          </p>
-          <p className="flex justify-between">
-            <span>Paid by</span>
-            <span>{PAYMENT_LABELS[order.paymentMethod]}</span>
-          </p>
-        </div>
+        <Divider />
 
-        <p className="mt-3 text-center">Thank you for your purchase!</p>
+        <p className="flex justify-between">
+          <span>Items</span>
+          <span>{itemCount}</span>
+        </p>
+        <p className="mt-1 flex justify-between border-y-2 border-black py-1 text-sm font-bold">
+          <span>TOTAL</span>
+          <span>{money.format(order.total)}</span>
+        </p>
+        <p className="mt-1 flex justify-between">
+          <span>Paid by</span>
+          <span>{PAYMENT_LABELS[order.paymentMethod]}</span>
+        </p>
+
+        <Divider />
+
+        <div className="text-center">
+          <p className="font-display text-sm font-bold italic">
+            Thank you for shopping with us!
+          </p>
+          <p className="mt-2">Follow us on Instagram {SHOP_INSTAGRAM}</p>
+          <p>WhatsApp {SHOP_WHATSAPP}</p>
+          <p>Shop online at {SHOP_WEBSITE}</p>
+          {RECEIPT_NOTE && <p className="mt-2 text-[10px]">{RECEIPT_NOTE}</p>}
+          <p className="mt-3 tracking-[0.4em]">✦ ✦ ✦</p>
+        </div>
       </div>
     </div>
   );
