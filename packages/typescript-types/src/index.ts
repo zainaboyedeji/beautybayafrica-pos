@@ -9,6 +9,8 @@ export interface ProductVariant {
   price: number;
   costPrice?: number;
   barcode?: string;
+  /** Copied from the online shop, which sets its selling price. */
+  fromWebsite?: boolean;
 }
 
 export interface Product {
@@ -21,6 +23,8 @@ export interface Product {
   /** Scannable code (EAN, UPC, …), kept as text so leading zeros survive. */
   barcode?: string;
   imageUrl?: CloudinaryUrl;
+  /** Copied from the online shop, which sets its selling price. */
+  fromWebsite?: boolean;
   /**
    * When present, the product is sold by option and each option has its own
    * price and stock; `price` is then the lowest option price.

@@ -41,6 +41,8 @@ const PER_OPTION_FIELDS = new Set([
 type OptionForm = {
   /** Set for options that already exist, so their sales history lines up. */
   id?: string;
+  /** The online shop sets this option's selling price. */
+  fromWebsite?: boolean;
   name: string;
   sku: string;
   barcode: string;
@@ -57,6 +59,12 @@ const OPTION_FIELDS = [
   { key: "price", label: "Selling price", type: "number", required: true },
   { key: "quantity", label: "Quantity", type: "number", required: true },
 ] as const;
+
+const LOCKED_INPUT = `${INPUT} disabled:bg-surface-alt disabled:text-muted`;
+
+const WebsitePriceNote = () => (
+  <span className="font-normal text-muted"> (set on the website)</span>
+);
 
 // Scanners press Enter after the code; move on instead of submitting.
 const nextFieldOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -100,6 +108,7 @@ export default function AddProductForm({
   const [options, setOptions] = useState<OptionForm[]>(
     (product?.variants ?? []).map((v) => ({
       id: v.id,
+      fromWebsite: v.fromWebsite,
       name: v.name,
       sku: v.sku,
       barcode: v.barcode ?? "",
@@ -216,8 +225,12 @@ export default function AddProductForm({
             {!field.required && (
               <span className="font-normal text-muted"> (optional)</span>
             )}
+            {field.key === "price" && product?.fromWebsite && (
+              <WebsitePriceNote />
+            )}
             <input
               autoFocus={index === 0}
+              disabled={field.key === "price" && product?.fromWebsite}
               type={field.type}
               required={field.required}
               min={field.type === "number" ? 0 : undefined}
@@ -241,7 +254,7 @@ export default function AddProductForm({
               onChange={(e) =>
                 setForm({ ...form, [field.key]: e.target.value })
               }
-              className={INPUT}
+              className={LOCKED_INPUT}
             />
           </label>
         ),
@@ -288,8 +301,12 @@ export default function AddProductForm({
                   {!field.required && (
                     <span className="font-normal text-muted"> (optional)</span>
                   )}
+                  {field.key === "price" && option.fromWebsite && (
+                    <WebsitePriceNote />
+                  )}
                   <input
                     type={field.type}
+                    disabled={field.key === "price" && option.fromWebsite}
                     required={field.required}
                     min={field.type === "number" ? 0 : undefined}
                     step={
@@ -309,7 +326,7 @@ export default function AddProductForm({
                     onChange={(e) =>
                       updateOption(index, { [field.key]: e.target.value })
                     }
-                    className={INPUT}
+                    className={LOCKED_INPUT}
                   />
                 </label>
               ))}

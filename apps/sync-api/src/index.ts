@@ -1,4 +1,5 @@
 import { db, transaction } from "./db";
+import { syncFromWooCommerce, syncOneProduct } from "./woocommerce";
 import express from "express";
 import type { PoolClient } from "pg";
 import {
@@ -47,6 +48,7 @@ type ProductRow = {
   barcode: string | null;
   image_url: string | null;
   quantity: number;
+  wc_id: number | null;
   updated_at: Date;
 };
 
@@ -60,6 +62,7 @@ const toProduct = (row: ProductRow): Product => ({
   ...(row.image_url !== null
     ? { imageUrl: row.image_url as CloudinaryUrl }
     : {}),
+  ...(row.wc_id !== null ? { fromWebsite: true } : {}),
 });
 
 type VariantRow = {
@@ -71,6 +74,7 @@ type VariantRow = {
   cost_price: number | null;
   barcode: string | null;
   quantity: number;
+  wc_id: number | null;
   updated_at: Date;
 };
 
@@ -81,6 +85,7 @@ const toVariant = (row: VariantRow): ProductVariant => ({
   price: row.price,
   ...(row.cost_price !== null ? { costPrice: row.cost_price } : {}),
   ...(row.barcode !== null ? { barcode: row.barcode } : {}),
+  ...(row.wc_id !== null ? { fromWebsite: true } : {}),
 });
 
 const fetchVariants = async (productIds?: string[]) =>
@@ -266,6 +271,73 @@ app.use((req, res, next) => {
   }
   next();
 });
+// --- Website webhook -------------------------------------------------------
+
+// WooCommerce calls this when a product is created or updated, so website
+// price changes reach the till within seconds. WOOCOMMERCE_WEBHOOK_SECRET is
+// the secret entered for the webhook in WooCommerce → Settings → Advanced →
+// Webhooks. (Registered before express.json: the signature covers the raw body.)
+const WEBHOOK_SECRET = process.env.WOOCOMMERCE_WEBHOOK_SECRET ?? "";
+
+// Saving a product with many options sends one call per option; wait a
+// moment and refresh each product once.
+const pendingProducts = new Set<number>();
+let webhookTimer: NodeJS.Timeout | undefined;
+const refreshPending = async () => {
+  for (const wcId of [...pendingProducts]) {
+    pendingProducts.delete(wcId);
+    try {
+      const result = await syncOneProduct(wcId);
+      if (result?.added || result?.updated)
+        console.log(`Website change: product ${wcId} refreshed.`);
+    } catch (err) {
+      // The nightly sync will pick it up instead.
+      console.error(`Website change for product ${wcId} failed:`, err);
+    }
+  }
+};
+
+app.post(
+  "/webhooks/woocommerce",
+  express.raw({ type: "*/*", limit: "5mb" }),
+  (req, res) => {
+    const body: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    // WooCommerce sends an unsigned "webhook_id=…" ping when a webhook is saved.
+    if (body.toString("utf8", 0, 11) === "webhook_id=") {
+      res.sendStatus(200);
+      return;
+    }
+    const given = Buffer.from(req.header("x-wc-webhook-signature") ?? "");
+    const expected = Buffer.from(
+      createHmac("sha256", WEBHOOK_SECRET).update(body).digest("base64"),
+    );
+    if (
+      !WEBHOOK_SECRET ||
+      given.length !== expected.length ||
+      !timingSafeEqual(given, expected)
+    ) {
+      res.status(401).json({ error: "Invalid webhook signature" });
+      return;
+    }
+
+    let payload: { id?: number; parent_id?: number };
+    try {
+      payload = JSON.parse(body.toString("utf8"));
+    } catch {
+      res.status(400).json({ error: "Invalid JSON" });
+      return;
+    }
+    const wcId = Number(payload.parent_id || payload.id);
+    if (Number.isInteger(wcId) && wcId > 0) {
+      pendingProducts.add(wcId);
+      clearTimeout(webhookTimer);
+      webhookTimer = setTimeout(refreshPending, 3_000);
+    }
+    // Answer straight away; WooCommerce gives up on slow replies.
+    res.sendStatus(202);
+  },
+);
+
 app.use(express.json());
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "5mb" }));
 
@@ -543,6 +615,32 @@ const saveVariants = async (
   }
 };
 
+/**
+ * Products and options from the online shop keep the selling price the
+ * website sync gave them; it is changed on the website instead.
+ */
+const keepWebsitePrices = async (productId: string, input: ProductInput) => {
+  const product = (
+    await db.query<{ wc_id: number | null; price: number }>(
+      "SELECT wc_id, price FROM products WHERE id = $1",
+      [productId],
+    )
+  ).rows[0];
+  const locked = new Map(
+    (
+      await db.query<{ id: string; price: number }>(
+        "SELECT id, price FROM product_variants WHERE product_id = $1 AND wc_id IS NOT NULL",
+        [productId],
+      )
+    ).rows.map((v) => [v.id, v.price]),
+  );
+  for (const variant of input.variants)
+    if (variant.id && locked.has(variant.id)) variant.price = locked.get(variant.id)!;
+  if (input.variants.length > 0)
+    input.price = Math.min(...input.variants.map((v) => v.price));
+  else if (product?.wc_id != null) input.price = product.price;
+};
+
 const productValues = (input: Omit<ProductInput, "variants">) => [
   input.sku,
   input.name,
@@ -591,6 +689,7 @@ app.put("/products/:id", adminOnly, async (req, res) => {
     res.status(409).json({ error: conflict });
     return;
   }
+  await keepWebsitePrices(id, input);
 
   // Past orders keep their own copy of the name and prices, so they are
   // unaffected. Optional fields left empty are removed.
@@ -763,7 +862,8 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
                           $5::numeric[], $6::text[], $7::text[], $8::int[])
      ON CONFLICT (sku) DO UPDATE SET
        name = EXCLUDED.name,
-       price = EXCLUDED.price,
+       -- The online shop sets the price of products copied from it.
+       price = CASE WHEN products.wc_id IS NULL THEN EXCLUDED.price ELSE products.price END,
        cost_price = COALESCE(EXCLUDED.cost_price, products.cost_price),
        barcode = COALESCE(EXCLUDED.barcode, products.barcode),
        image_url = COALESCE(EXCLUDED.image_url, products.image_url),
@@ -1030,3 +1130,60 @@ app.use(errorHandler);
 app.listen(port, () => {
   console.log(`sync-api listening on http://localhost:${port}`);
 });
+
+// --- Website sync ----------------------------------------------------------
+
+// Backup for missed webhooks: copies names, selling prices, photos and new
+// products from the online shop once a night at 1am Lagos time. Stock, cost
+// prices and barcodes are never touched. The free host sleeps when idle, so
+// a missed night is caught up soon after the server next wakes. Set
+// WOOCOMMERCE_SYNC=off to stop it, or WOOCOMMERCE_SYNC_HOUR to change 1am.
+const SYNC_HOUR = Number(process.env.WOOCOMMERCE_SYNC_HOUR ?? 1);
+const HOUR_MS = 3600_000;
+const lagosHour = () =>
+  Number(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: "Africa/Lagos",
+    }).format(new Date()),
+  );
+
+let syncing = false;
+let lastAttempt = 0;
+const nightlySync = async () => {
+  // After a failure, wait an hour before trying again.
+  if (syncing || Date.now() - lastAttempt < HOUR_MS) return;
+  syncing = true;
+  try {
+    const last = (
+      await db.query<{ last_full_sync: Date }>(
+        "SELECT last_full_sync FROM woocommerce_sync",
+      )
+    ).rows[0]?.last_full_sync;
+    const age = last ? Date.now() - last.getTime() : Infinity;
+    const due =
+      (lagosHour() === SYNC_HOUR && age > 2 * HOUR_MS) || age > 25 * HOUR_MS;
+    if (!due) return;
+    lastAttempt = Date.now();
+    const { added, updated, skipped } = await syncFromWooCommerce();
+    await db.query(
+      `INSERT INTO woocommerce_sync (id, last_full_sync) VALUES (true, now())
+       ON CONFLICT (id) DO UPDATE SET last_full_sync = now()`,
+    );
+    console.log(
+      `Website sync: ${added} added, ${updated} updated, ${skipped.length} skipped.`,
+    );
+  } catch (err) {
+    // A slow or offline website just means trying again later.
+    console.error("Website sync failed; will try again later:", err);
+  } finally {
+    syncing = false;
+  }
+};
+
+if (process.env.WOOCOMMERCE_SYNC !== "off") {
+  // Shortly after starting (to catch up a missed night), then every 10 minutes.
+  setTimeout(nightlySync, 60_000);
+  setInterval(nightlySync, 10 * 60_000);
+}

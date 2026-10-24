@@ -39,6 +39,10 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      # Same secret as the WooCommerce "product updated" webhook, which points
+      # at https://<this service>/webhooks/woocommerce.
+      - key: WOOCOMMERCE_WEBHOOK_SECRET
+        sync: false
 
   # The website: the cashier terminal screens, built as static files.
   - type: web
