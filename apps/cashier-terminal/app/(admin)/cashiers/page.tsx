@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Notice } from "../../components/action-modals";
 import { INPUT, PRIMARY_BUTTON } from "../../components/form-styles";
+import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
   apiFetch,
   describeError,
@@ -18,6 +19,9 @@ export default function CashiersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const visible = cashiers.data?.filter((c) => matches(search, c.name));
 
   const add = async () => {
     setSaving(true);
@@ -100,15 +104,25 @@ export default function CashiersPage() {
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
 
       <div className="mt-6">
+        <SearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Search cashiers by name"
+        />
+      </div>
+
+      <div className="mt-4">
         {cashiers.failed ? (
           <LoadError />
-        ) : !cashiers.data ? (
+        ) : !cashiers.data || !visible ? (
           <Loading />
         ) : cashiers.data.length === 0 ? (
           <p className="text-sm text-muted">No cashiers yet.</p>
+        ) : visible.length === 0 ? (
+          <NoMatches />
         ) : (
           <ul className="divide-y divide-line rounded-lg bg-white shadow-sm">
-            {cashiers.data.map((c) => (
+            {visible.map((c) => (
               <li
                 key={c.id}
                 className="flex items-center justify-between px-4 py-3 text-sm"

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import type { Order } from "@pos/types";
 import ActionModals, {
   Notice,
   type ActionModal,
 } from "../../components/action-modals";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
+import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { fetchCatalog, fetchOrders, money, useLoad } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
 
@@ -14,9 +16,29 @@ export default function SalesPage() {
   const catalog = useLoad(fetchCatalog);
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const productName = (id: string) =>
     catalog.data?.products.find((p) => p.id === id)?.name ?? "Removed product";
+
+  const itemsText = (order: Order) =>
+    order.items
+      .map((i) => `${i.quantity} × ${i.name ?? productName(i.productId)}`)
+      .join(", ");
+
+  const visible = orders.data
+    ? [...orders.data]
+        .reverse()
+        .filter((order) =>
+          matches(
+            search,
+            order.customer.name,
+            order.customer.phone,
+            order.paymentMethod,
+            itemsText(order),
+          ),
+        )
+    : null;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -39,12 +61,22 @@ export default function SalesPage() {
       />
 
       <div className="mt-6">
+        <SearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by customer, phone, item or payment"
+        />
+      </div>
+
+      <div className="mt-4">
         {orders.failed ? (
           <LoadError />
-        ) : !orders.data ? (
+        ) : !orders.data || !visible ? (
           <Loading />
         ) : orders.data.length === 0 ? (
           <p className="text-sm text-muted">No sales recorded yet.</p>
+        ) : visible.length === 0 ? (
+          <NoMatches />
         ) : (
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
             <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
@@ -58,7 +90,7 @@ export default function SalesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {[...orders.data].reverse().map((order) => (
+              {visible.map((order) => (
                 <tr key={order.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3">
                     {new Date(order.createdAt).toLocaleString()}
@@ -67,14 +99,7 @@ export default function SalesPage() {
                     {order.customer.name}
                   </td>
                   <td className="px-4 py-3">{order.customer.phone}</td>
-                  <td className="px-4 py-3">
-                    {order.items
-                      .map(
-                        (i) =>
-                          `${i.quantity} × ${i.name ?? productName(i.productId)}`,
-                      )
-                      .join(", ")}
-                  </td>
+                  <td className="px-4 py-3">{itemsText(order)}</td>
                   <td className="px-4 py-3 capitalize">
                     {order.paymentMethod}
                   </td>

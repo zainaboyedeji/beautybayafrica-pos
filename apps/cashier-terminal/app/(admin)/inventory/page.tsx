@@ -8,6 +8,7 @@ import ActionModals, {
 } from "../../components/action-modals";
 import AddProductForm from "../../components/add-product-form";
 import Modal from "../../components/modal";
+import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
 import {
   apiFetch,
@@ -36,6 +37,13 @@ export default function InventoryPage() {
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [search, setSearch] = useState("");
+
+  const products = catalog.data?.products.filter((p) =>
+    [p, ...(p.variants ?? [])].some((x) =>
+      matches(search, x.name, x.sku, x.barcode),
+    ),
+  );
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -168,10 +176,20 @@ export default function InventoryPage() {
       </div>
 
       <div className="mt-6">
+        <SearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name, SKU or barcode"
+        />
+      </div>
+
+      <div className="mt-4">
         {catalog.failed ? (
           <LoadError />
-        ) : !catalog.data ? (
+        ) : !catalog.data || !products ? (
           <Loading />
+        ) : products.length === 0 ? (
+          <NoMatches />
         ) : (
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
             <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
@@ -188,7 +206,7 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {catalog.data.products.map((p) => {
+              {products.map((p) => {
                 const stock = catalog.data?.stock ?? {};
                 const prices = p.variants?.map((v) => v.price) ?? [];
                 return (

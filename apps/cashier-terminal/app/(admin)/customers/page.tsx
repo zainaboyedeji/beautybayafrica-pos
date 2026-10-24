@@ -6,6 +6,7 @@ import ActionModals, {
   type ActionModal,
 } from "../../components/action-modals";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
+import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
   fetchCustomers,
   fetchOrders,
@@ -20,11 +21,15 @@ export default function CustomersPage() {
   const orders = useLoad(fetchOrders);
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const rows =
     customers.data && orders.data
       ? summariseCustomers(customers.data, orders.data)
       : null;
+  const visible = rows?.filter((c) =>
+    matches(search, c.name, c.phone, c.email),
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -46,12 +51,22 @@ export default function CustomersPage() {
       />
 
       <div className="mt-6">
+        <SearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name, phone or email"
+        />
+      </div>
+
+      <div className="mt-4">
         {customers.failed || orders.failed ? (
           <LoadError />
-        ) : !rows ? (
+        ) : !rows || !visible ? (
           <Loading />
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted">No customers yet.</p>
+        ) : visible.length === 0 ? (
+          <NoMatches />
         ) : (
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
             <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
@@ -65,7 +80,7 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {rows.map((c) => (
+              {visible.map((c) => (
                 <tr key={c.phone}>
                   <td className="px-4 py-3 font-medium">{c.name}</td>
                   <td className="px-4 py-3">{c.phone}</td>
