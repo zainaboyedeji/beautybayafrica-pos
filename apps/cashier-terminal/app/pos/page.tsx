@@ -48,6 +48,11 @@ export default function CashierTerminal() {
   );
   const [customer, setCustomer] = useState<Customer>(EMPTY_CUSTOMER);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  // A saved customer with the phone number typed in, waiting for the
+  // cashier to say whether it's the same person.
+  const [existing, setExisting] = useState<Customer | null>(null);
+  // The phone number already checked, so the cashier is asked only once.
+  const [checkedPhone, setCheckedPhone] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -126,6 +131,8 @@ export default function CashierTerminal() {
   const startCheckout = () => {
     setPaymentMethod(null);
     setCustomer(EMPTY_CUSTOMER);
+    setExisting(null);
+    setCheckedPhone(null);
     setCheckoutError(null);
     setStep("payment");
   };
@@ -133,17 +140,29 @@ export default function CashierTerminal() {
   const customerValid =
     customer.name.trim() !== "" && customer.phone.trim() !== "";
 
-  const completeSale = async () => {
+  const completeSale = async (buyer: Customer = customer) => {
     if (!paymentMethod || !customerValid) return;
     setCharging(true);
     setCheckoutError(null);
     try {
+      const phone = buyer.phone.replace(/\s+/g, "");
+      if (phone !== checkedPhone) {
+        setCheckedPhone(phone);
+        const found = await apiFetch(
+          `/customers/lookup?phone=${encodeURIComponent(phone)}`,
+        );
+        if (found.ok) {
+          setExisting((await found.json()) as Customer);
+          return;
+        }
+      }
+      setExisting(null);
       const res = await apiFetch("/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentMethod,
-          customer,
+          customer: buyer,
           items: lines.map((l) => orderItem(l.item, l.quantity)),
         }),
       });
@@ -462,7 +481,7 @@ export default function CashierTerminal() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void completeSale();
+                  if (!existing) void completeSale();
                 }}
               >
                 <h2 className="mt-1 text-xl font-semibold">Customer details</h2>
@@ -473,6 +492,7 @@ export default function CashierTerminal() {
                 <label className="mt-4 block text-sm font-medium">
                   Full name
                   <input
+                    id="customer-name"
                     autoFocus
                     required
                     value={customer.name}
@@ -488,9 +508,10 @@ export default function CashierTerminal() {
                     required
                     type="tel"
                     value={customer.phone}
-                    onChange={(e) =>
-                      setCustomer({ ...customer, phone: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setCustomer({ ...customer, phone: e.target.value });
+                      setExisting(null);
+                    }}
                     className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
                   />
                 </label>
@@ -506,6 +527,45 @@ export default function CashierTerminal() {
                     className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
                   />
                 </label>
+                {existing && (
+                  <div className="mt-4 rounded-lg border border-brand bg-brand-soft p-4 text-sm">
+                    <p className="font-semibold">
+                      This customer already exists
+                    </p>
+                    <p className="mt-1">
+                      {existing.name} · {existing.phone}
+                      {existing.email && ` · ${existing.email}`}
+                    </p>
+                    <p className="mt-2">Is this the same person?</p>
+                    <div className="mt-3 flex gap-3">
+                      <button
+                        type="button"
+                        disabled={charging}
+                        onClick={() => {
+                          setCustomer(existing);
+                          void completeSale(existing);
+                        }}
+                        className="flex-1 rounded-lg bg-brand py-2 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
+                      >
+                        Yes, continue
+                      </button>
+                      <button
+                        type="button"
+                        disabled={charging}
+                        onClick={() => {
+                          // Start again with an empty form for the new person.
+                          setExisting(null);
+                          setCheckedPhone(null);
+                          setCustomer(EMPTY_CUSTOMER);
+                          document.getElementById("customer-name")?.focus();
+                        }}
+                        className="flex-1 rounded-lg bg-white py-2 font-medium hover:bg-surface-alt disabled:opacity-40"
+                      >
+                        No, new customer
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {checkoutError && (
                   <p className="mt-3 text-sm text-red-700">{checkoutError}</p>
                 )}
@@ -520,7 +580,7 @@ export default function CashierTerminal() {
                   </button>
                   <button
                     type="submit"
-                    disabled={!customerValid || charging}
+                    disabled={!customerValid || charging || !!existing}
                     className="flex-1 rounded-lg bg-brand py-3 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
                   >
                     {charging ? "Completing…" : "Complete sale"}

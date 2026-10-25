@@ -897,6 +897,23 @@ app.get("/customers", adminOnly, async (_req, res) => {
   res.json(rows.map(toCustomer));
 });
 
+// Cashiers can't list customers, but at checkout they may check whether a
+// phone number is already saved, so they can confirm it's the same person.
+app.get("/customers/lookup", anyone, async (req, res) => {
+  const phone = String(req.query.phone ?? "").trim();
+  const { rows } = phone
+    ? await db.query<CustomerRow>(
+        "SELECT name, phone, email FROM customers WHERE phone_key = $1",
+        [phoneKey(phone)],
+      )
+    : { rows: [] };
+  if (!rows[0]) {
+    res.status(404).json({ error: "No customer with that phone" });
+    return;
+  }
+  res.json(toCustomer(rows[0]));
+});
+
 app.post("/customers", adminOnly, async (req, res) => {
   const name = String(req.body?.name ?? "").trim();
   const phone = String(req.body?.phone ?? "").trim();
@@ -1012,7 +1029,6 @@ app.post("/orders", anyone, async (req, res) => {
     res.status(400).json({ error: "Customer name and phone are required" });
     return;
   }
-  const customer: Customer = { name, phone, ...(email ? { email } : {}) };
 
   // Sales recorded in the back office may carry the date they happened.
   let createdAt = new Date();
@@ -1067,6 +1083,17 @@ app.post("/orders", anyone, async (req, res) => {
       });
     }
 
+    // Save the customer. A phone number already saved keeps its customer's
+    // name, so the sale goes under that name; a new email replaces the old.
+    const saved = await client.query<CustomerRow>(
+      `INSERT INTO customers (phone_key, name, phone, email) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (phone_key) DO UPDATE SET
+         email = COALESCE(EXCLUDED.email, customers.email)
+       RETURNING name, phone, email`,
+      [phoneKey(phone), name, phone, email || null],
+    );
+    const customer = toCustomer(saved.rows[0]);
+
     const total = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
     const order: Order = {
       id: randomUUID(),
@@ -1079,7 +1106,15 @@ app.post("/orders", anyone, async (req, res) => {
     await client.query(
       `INSERT INTO orders (id, total, payment_method, customer_name, customer_phone, customer_email, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [order.id, order.total, paymentMethod, name, phone, email || null, createdAt],
+      [
+        order.id,
+        order.total,
+        paymentMethod,
+        customer.name,
+        customer.phone,
+        customer.email ?? null,
+        createdAt,
+      ],
     );
     for (const [line, item] of items.entries()) {
       await client.query(
@@ -1097,13 +1132,6 @@ app.post("/orders", anyone, async (req, res) => {
         ],
       );
     }
-    // Save the customer, keeping a known email if none was given this time.
-    await client.query(
-      `INSERT INTO customers (phone_key, name, phone, email) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (phone_key) DO UPDATE SET name = EXCLUDED.name,
-         phone = EXCLUDED.phone, email = COALESCE(EXCLUDED.email, customers.email)`,
-      [phoneKey(phone), name, phone, email || null],
-    );
     return order;
   });
   res.status(201).json(order);
