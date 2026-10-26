@@ -20,7 +20,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6 backdrop-blur-[2px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -29,7 +29,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`max-h-full w-full overflow-auto rounded-xl bg-white p-6 text-ink shadow-xl ${
+        className={`max-h-full w-full overflow-auto rounded-2xl bg-white p-6 text-ink shadow-2xl ring-1 ring-line ${
           wide ? "max-w-3xl" : "max-w-md"
         }`}
       >

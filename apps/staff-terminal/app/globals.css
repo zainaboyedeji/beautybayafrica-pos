@@ -13,10 +13,17 @@
   --color-line: #f5e1ec;
   --color-line-strong: #ebcfdf;
   --color-surface-alt: #fff7fb;
+
+  /* Cards and tables: a hairline edge with a soft, faintly pink shadow. */
+  --shadow-sm:
+    0 0 0 1px rgb(235 207 223 / 0.6), 0 1px 2px rgb(168 18 109 / 0.04),
+    0 6px 16px -6px rgb(20 20 20 / 0.08);
+  --radius-lg: 0.875rem;
 }
 
 @theme inline {
-  --font-sans: var(--font-outfit), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans:
+    var(--font-outfit), "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-display: var(--font-playfair), Georgia, serif;
 }
 
@@ -24,6 +31,36 @@ body {
   background: #ffffff;
   color: var(--color-ink);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-brand-soft);
+}
+
+/* The back office's page area: a faint pink glow at the top. */
+.app-canvas {
+  background:
+    radial-gradient(
+      1100px 380px at 85% -120px,
+      rgb(255 217 240 / 0.7),
+      transparent 70%
+    ),
+    var(--color-surface-alt);
+}
+
+/* Table rows light up softly under the pointer. */
+main tbody tr {
+  transition: background-color 120ms ease;
+}
+main tbody tr:hover {
+  background-color: rgb(255 217 240 / 0.28);
+}
+
+/* Slim scrollbars that don't fight the design. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
 }
 
 @layer base {

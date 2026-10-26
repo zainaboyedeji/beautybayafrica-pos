@@ -6,7 +6,7 @@ export default function AdminLayout({ children }: LayoutProps<"/">) {
     <RequireLogin allowed={["admin"]}>
       <div className="flex h-screen bg-surface-alt text-ink">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-8">{children}</main>
+        <main className="app-canvas flex-1 overflow-auto p-8">{children}</main>
       </div>
     </RequireLogin>
   );
