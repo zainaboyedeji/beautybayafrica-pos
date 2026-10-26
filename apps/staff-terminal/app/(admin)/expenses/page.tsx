@@ -10,6 +10,7 @@ import {
 } from "../../components/form-styles";
 import ConfirmDialog from "../../components/confirm-dialog";
 import Modal from "../../components/modal";
+import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
   apiFetch,
@@ -92,6 +93,8 @@ export default function ExpensesPage() {
       setError(describeError(e, "Could not delete expense"));
     }
   };
+
+  const pager = usePagination(visible, JSON.stringify([search, category]));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -187,7 +190,7 @@ export default function ExpensesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {visible.map((e) => (
+              {pager.pageItems?.map((e) => (
                 <tr key={e.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3">
                     {formatDay(e.spentOn)}
@@ -222,6 +225,7 @@ export default function ExpensesPage() {
           </table>
         )}
       </div>
+      <Pagination pager={pager} label="expenses" />
     </div>
   );
 }

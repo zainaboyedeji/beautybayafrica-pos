@@ -9,6 +9,7 @@ import ConfirmDialog from "../../components/confirm-dialog";
 import RequestStatusCell, {
   STATUS_LABELS,
 } from "../../components/request-status";
+import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import SetPinDialog from "../../components/set-pin-dialog";
 import {
@@ -87,6 +88,8 @@ export default function RequestsPage() {
     r.kind === "pin_reset" && r.status === "pending"
       ? NEXT_ACTIONS.pending.filter((a) => a.status === "rejected")
       : NEXT_ACTIONS[r.status];
+
+  const pager = usePagination(visible, JSON.stringify([search, status]));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -183,7 +186,7 @@ export default function RequestsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {visible.map((r) => (
+              {pager.pageItems?.map((r) => (
                 <tr key={r.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3">
                     {new Date(r.createdAt).toLocaleString()}
@@ -235,6 +238,7 @@ export default function RequestsPage() {
           </table>
         )}
       </div>
+      <Pagination pager={pager} label="requests" />
     </div>
   );
 }

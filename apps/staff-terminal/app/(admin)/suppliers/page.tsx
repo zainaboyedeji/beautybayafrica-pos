@@ -10,6 +10,7 @@ import {
 } from "../../components/form-styles";
 import ConfirmDialog from "../../components/confirm-dialog";
 import Modal from "../../components/modal";
+import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
   apiFetch,
@@ -63,6 +64,8 @@ export default function SuppliersPage() {
       setError(describeError(e, "Could not remove supplier"));
     }
   };
+
+  const pager = usePagination(visible, JSON.stringify([search]));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -132,7 +135,7 @@ export default function SuppliersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {visible.map((s) => (
+              {pager.pageItems?.map((s) => (
                 <tr key={s.id} className="align-top">
                   <td className="px-4 py-3 font-medium">{s.name}</td>
                   <td className="px-4 py-3">{s.contactPerson ?? "—"}</td>
@@ -164,6 +167,7 @@ export default function SuppliersPage() {
           </table>
         )}
       </div>
+      <Pagination pager={pager} label="suppliers" />
     </div>
   );
 }

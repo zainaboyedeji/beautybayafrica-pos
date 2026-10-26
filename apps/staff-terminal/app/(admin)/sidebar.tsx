@@ -15,6 +15,7 @@ const LINKS = [
   { href: "/expenses", label: "Expenses" },
   { href: "/requests", label: "Requests" },
   { href: "/staff", label: "Staff" },
+  { href: "/activity", label: "Activity" },
 ];
 
 export default function Sidebar() {

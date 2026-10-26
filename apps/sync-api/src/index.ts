@@ -10,6 +10,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import type {
+  ActivityAction,
+  ActivityEntry,
   CloudinaryUrl,
   Customer,
   Expense,
@@ -272,6 +274,29 @@ const requireRole =
 /** The logged-in user, for handlers behind requireRole. */
 const sessionOf = (res: express.Response) => res.locals.session as Session;
 
+// --- Activity log ------------------------------------------------------------
+
+type Actor = { role: Role | "visitor"; name: string; staffId?: string };
+
+const naira = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" });
+
+/** Adds a line to the admin's activity log. A failure here never undoes the action. */
+const logActivity = async (actor: Actor, action: ActivityAction, summary: string) => {
+  try {
+    await db.query(
+      `INSERT INTO activity_log (actor_role, actor_name, staff_id, action, summary)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [actor.role, actor.name, actor.staffId ?? null, action, summary],
+    );
+  } catch (err) {
+    console.error("Could not save activity:", err);
+  }
+};
+
+/** Logs an action by the logged-in user. */
+const logBy = (res: express.Response, action: ActivityAction, summary: string) =>
+  logActivity(sessionOf(res), action, summary);
+
 const anyone = requireRole("admin", "staff");
 const adminOnly = requireRole("admin");
 
@@ -397,12 +422,18 @@ app.post("/auth/login", async (req, res) => {
       count,
       until: Date.now() + LOCKOUT_MINUTES * 60_000,
     });
+    await logActivity(
+      { role: "visitor", name: "Unknown" },
+      "login_failed",
+      password ? "Wrong admin password" : "Wrong staff PIN",
+    );
     res
       .status(401)
       .json({ error: password ? "Wrong password" : "Wrong PIN" });
     return;
   }
   failedLogins.delete(key);
+  await logActivity(session, "login", session.role === "admin" ? "Logged in to the back office" : "Logged in to the till");
   res.json({ token: createToken(session), role: session.role, name: session.name });
 });
 
@@ -440,6 +471,7 @@ app.post("/staff", adminOnly, async (req, res) => {
      VALUES ($1, $2, $3, $4, $5)`,
     [id, name, role, salt, hashPin(pin, salt)],
   );
+  await logBy(res, "staff_added", `Added ${name} (${role})`);
   res.status(201).json({ id, name, role });
 });
 
@@ -460,6 +492,7 @@ app.put("/staff/:id", adminOnly, async (req, res) => {
     res.status(404).json({ error: "Staff member not found" });
     return;
   }
+  await logBy(res, "staff_updated", `Updated ${name} (${role})`);
   res.json({ id: req.params.id, name, role });
 });
 
@@ -497,17 +530,20 @@ app.put("/staff/:id/pin", adminOnly, async (req, res) => {
       [member.id, member.name, optionalText(req.body?.requestId)],
     );
   });
+  await logBy(res, "pin_reset", `Set a new PIN for ${member.name}`);
   res.json({ id: member.id, name: member.name });
 });
 
 app.delete("/staff/:id", adminOnly, async (req, res) => {
-  const { rowCount } = await db.query("DELETE FROM staff WHERE id = $1", [
-    req.params.id,
-  ]);
-  if (!rowCount) {
+  const { rows } = await db.query<{ name: string }>(
+    "DELETE FROM staff WHERE id = $1 RETURNING name",
+    [req.params.id],
+  );
+  if (!rows[0]) {
     res.status(404).json({ error: "Staff member not found" });
     return;
   }
+  await logBy(res, "staff_removed", `Removed ${rows[0].name}`);
   res.sendStatus(204);
 });
 
@@ -762,6 +798,7 @@ app.post("/products", adminOnly, async (req, res) => {
     await saveVariants(client, rows[0].id, input.variants);
     return rows[0];
   });
+  await logBy(res, "product_added", `Added ${product.name} (${product.sku})`);
   res
     .status(201)
     .json(withVariants([product], await fetchVariants([product.id]))[0]);
@@ -795,6 +832,7 @@ app.put("/products/:id", adminOnly, async (req, res) => {
     await saveVariants(client, id, input.variants);
     return rows[0];
   });
+  await logBy(res, "product_updated", `Updated ${product.name} (${product.sku})`);
   res.json(withVariants([product], await fetchVariants([id]))[0]);
 });
 
@@ -983,6 +1021,12 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
     ],
   );
   const added = result.rows.filter((r) => r.inserted).length;
+  await logBy(
+    res,
+    "inventory_imported",
+    `Uploaded a CSV: ${added} added, ${result.rows.length - added} updated` +
+      (errors.length ? `, ${errors.length} skipped` : ""),
+  );
   res.json({
     added,
     updated: result.rows.length - added,
@@ -1035,6 +1079,7 @@ app.post("/customers", adminOnly, async (req, res) => {
     return;
   }
   const customer: Customer = { name, phone, ...(email ? { email } : {}) };
+  await logBy(res, "customer_added", `Added customer ${name} (${phone})`);
   res.status(201).json(customer);
 });
 
@@ -1235,6 +1280,14 @@ app.post("/orders", anyone, async (req, res) => {
     }
     return order;
   });
+  const count = order.items.reduce((sum, i) => sum + i.quantity, 0);
+  await logBy(
+    res,
+    "sale",
+    `Sold ${count} item${count === 1 ? "" : "s"} for ${naira.format(order.total)} ` +
+      `(${paymentMethod === "card" ? "card" : "bank transfer"}) to ${order.customer.name}` +
+      (req.body?.createdAt ? `, dated ${createdAt.toLocaleDateString("en-NG")}` : ""),
+  );
   res.status(201).json(order);
 });
 
@@ -1295,6 +1348,7 @@ app.post("/suppliers", adminOnly, async (req, res) => {
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [randomUUID(), ...fields],
   );
+  await logBy(res, "supplier_added", `Added supplier ${rows[0].name}`);
   res.status(201).json(toSupplier(rows[0]));
 });
 
@@ -1314,17 +1368,20 @@ app.put("/suppliers/:id", adminOnly, async (req, res) => {
     res.status(404).json({ error: "Supplier not found" });
     return;
   }
+  await logBy(res, "supplier_updated", `Updated supplier ${rows[0].name}`);
   res.json(toSupplier(rows[0]));
 });
 
 app.delete("/suppliers/:id", adminOnly, async (req, res) => {
-  const { rowCount } = await db.query("DELETE FROM suppliers WHERE id = $1", [
-    req.params.id,
-  ]);
-  if (!rowCount) {
+  const { rows } = await db.query<{ name: string }>(
+    "DELETE FROM suppliers WHERE id = $1 RETURNING name",
+    [req.params.id],
+  );
+  if (!rows[0]) {
     res.status(404).json({ error: "Supplier not found" });
     return;
   }
+  await logBy(res, "supplier_removed", `Removed supplier ${rows[0].name}`);
   res.sendStatus(204);
 });
 
@@ -1415,17 +1472,28 @@ app.post("/expenses", adminOnly, async (req, res) => {
       optionalText(req.body?.notes),
     ],
   );
+  await logBy(
+    res,
+    "expense_recorded",
+    `Recorded ${naira.format(rows[0].amount)} for ${rows[0].description} (${rows[0].category})`,
+  );
   res.status(201).json(toExpense(rows[0]));
 });
 
 app.delete("/expenses/:id", adminOnly, async (req, res) => {
-  const { rowCount } = await db.query("DELETE FROM expenses WHERE id = $1", [
-    req.params.id,
-  ]);
-  if (!rowCount) {
+  const { rows } = await db.query<{ description: string; amount: number }>(
+    "DELETE FROM expenses WHERE id = $1 RETURNING description, amount",
+    [req.params.id],
+  );
+  if (!rows[0]) {
     res.status(404).json({ error: "Expense not found" });
     return;
   }
+  await logBy(
+    res,
+    "expense_deleted",
+    `Deleted ${naira.format(rows[0].amount)} for ${rows[0].description}`,
+  );
   res.sendStatus(204);
 });
 
@@ -1525,6 +1593,13 @@ app.post("/requests", anyone, async (req, res) => {
       amount === null ? null : Math.round(amount * 100) / 100,
     ],
   );
+  await logBy(
+    res,
+    "request_made",
+    kind === "pin_reset"
+      ? "Asked for a new PIN"
+      : `Requested "${title}"` + (requestedBy !== session.name ? ` for ${requestedBy}` : ""),
+  );
   res.status(201).json(toStoreRequest(rows[0]));
 });
 
@@ -1565,6 +1640,11 @@ app.post("/pin-requests", async (req, res) => {
        AND lower(requested_by) = lower($1)`,
     [name],
   );
+  await logActivity(
+    { role: "visitor", name },
+    "pin_requested",
+    "Asked for a new PIN from the login screen",
+  );
   if (!open) {
     await db.query(
       `INSERT INTO store_requests (id, kind, title, details, requested_by,
@@ -1601,7 +1681,43 @@ app.put("/requests/:id/status", adminOnly, async (req, res) => {
     res.status(404).json({ error: "Request not found" });
     return;
   }
+  await logBy(
+    res,
+    "request_decided",
+    `Marked "${rows[0].title}" from ${rows[0].requested_by} ${status}`,
+  );
   res.json(toStoreRequest(rows[0]));
+});
+
+// The activity log, newest first. `days` limits it to recent days (0 for
+// all); at most the newest 5,000 entries are sent.
+app.get("/activity", adminOnly, async (req, res) => {
+  const days = Math.max(0, Number(req.query.days ?? 30) || 0);
+  const { rows } = await db.query<{
+    id: string;
+    at: Date;
+    actor_role: ActivityEntry["actorRole"];
+    actor_name: string;
+    action: ActivityAction;
+    summary: string;
+  }>(
+    `SELECT id, at, actor_role, actor_name, action, summary FROM activity_log
+     WHERE $1 = 0 OR at > now() - make_interval(days => $1)
+     ORDER BY at DESC LIMIT 5000`,
+    [days],
+  );
+  res.json(
+    rows.map(
+      (row): ActivityEntry => ({
+        id: String(row.id),
+        at: row.at.toISOString(),
+        actorRole: row.actor_role,
+        actorName: row.actor_name,
+        action: row.action,
+        summary: row.summary,
+      }),
+    ),
+  );
 });
 
 const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {

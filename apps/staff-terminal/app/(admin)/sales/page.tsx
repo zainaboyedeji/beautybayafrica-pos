@@ -7,6 +7,7 @@ import ActionModals, {
   type ActionModal,
 } from "../../components/action-modals";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
+import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { fetchCatalog, fetchOrders, money, useLoad } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
@@ -39,6 +40,8 @@ export default function SalesPage() {
           ),
         )
     : null;
+
+  const pager = usePagination(visible, JSON.stringify([search]));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -90,7 +93,7 @@ export default function SalesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {visible.map((order) => (
+              {pager.pageItems?.map((order) => (
                 <tr key={order.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3">
                     {new Date(order.createdAt).toLocaleString()}
@@ -112,6 +115,7 @@ export default function SalesPage() {
           </table>
         )}
       </div>
+      <Pagination pager={pager} label="sales" />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import ActionModals, {
 } from "../../components/action-modals";
 import AddProductForm from "../../components/add-product-form";
 import Modal from "../../components/modal";
+import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
 import {
@@ -146,6 +147,11 @@ export default function InventoryPage() {
       setUploading(false);
     }
   };
+
+  const pager = usePagination(
+    products,
+    JSON.stringify([search, category, stockFilter, source, type]),
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -370,7 +376,7 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {products.map((p, index) => {
+              {pager.pageItems?.map((p, index) => {
                 const prices = p.variants?.map((v) => v.price) ?? [];
                 const expanded = !!p.variants && isOpen(p);
                 const level = stockLevel(p);
@@ -378,7 +384,7 @@ export default function InventoryPage() {
                   <Fragment key={p.id}>
                     <tr className={expanded ? "bg-brand-soft/30" : undefined}>
                       <td className="px-4 py-3 text-right text-muted tabular-nums">
-                        {index + 1}
+                        {pager.start + index + 1}
                       </td>
                       <td className="px-4 py-2">
                         {p.imageUrl ? (
@@ -503,6 +509,7 @@ export default function InventoryPage() {
           </table>
         )}
       </div>
+      <Pagination pager={pager} label="products" />
     </div>
   );
 }

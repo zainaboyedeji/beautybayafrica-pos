@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type {
+  ActivityEntry,
   Customer,
   Expense,
   Inventory,
@@ -147,6 +148,13 @@ export async function fetchRequests(): Promise<StoreRequest[]> {
 export async function fetchMyRequests(): Promise<StoreRequest[]> {
   const res = await apiFetch("/requests/mine");
   if (!res.ok) throw new Error("Requests request failed");
+  return res.json();
+}
+
+/** The activity log for the last `days` days (0 for all). */
+export async function fetchActivity(days: number): Promise<ActivityEntry[]> {
+  const res = await apiFetch(`/activity?days=${days}`);
+  if (!res.ok) throw new Error("Activity request failed");
   return res.json();
 }
 

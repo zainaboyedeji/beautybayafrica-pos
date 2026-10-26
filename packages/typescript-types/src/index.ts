@@ -120,3 +120,35 @@ export interface Order {
   customer: Customer;
   createdAt: string;
 }
+
+/** Something done in the POS, for the admin's activity log. */
+export type ActivityAction =
+  | "login"
+  | "login_failed"
+  | "sale"
+  | "product_added"
+  | "product_updated"
+  | "inventory_imported"
+  | "customer_added"
+  | "staff_added"
+  | "staff_updated"
+  | "staff_removed"
+  | "pin_reset"
+  | "supplier_added"
+  | "supplier_updated"
+  | "supplier_removed"
+  | "expense_recorded"
+  | "expense_deleted"
+  | "request_made"
+  | "pin_requested"
+  | "request_decided";
+
+export interface ActivityEntry {
+  id: string;
+  at: string;
+  /** "visitor" is someone not logged in (a failed login or PIN request). */
+  actorRole: "admin" | "staff" | "visitor";
+  actorName: string;
+  action: ActivityAction;
+  summary: string;
+}

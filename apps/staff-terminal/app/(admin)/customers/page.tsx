@@ -6,6 +6,7 @@ import ActionModals, {
   type ActionModal,
 } from "../../components/action-modals";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
+import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
   fetchCustomers,
@@ -30,6 +31,8 @@ export default function CustomersPage() {
   const visible = rows?.filter((c) =>
     matches(search, c.name, c.phone, c.email),
   );
+
+  const pager = usePagination(visible, JSON.stringify([search]));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -80,7 +83,7 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {visible.map((c) => (
+              {pager.pageItems?.map((c) => (
                 <tr key={c.phone}>
                   <td className="px-4 py-3 font-medium">{c.name}</td>
                   <td className="px-4 py-3">{c.phone}</td>
@@ -100,6 +103,7 @@ export default function CustomersPage() {
           </table>
         )}
       </div>
+      <Pagination pager={pager} label="customers" />
     </div>
   );
 }
