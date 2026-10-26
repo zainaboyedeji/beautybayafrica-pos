@@ -9,6 +9,7 @@ import {
   SECONDARY_BUTTON,
 } from "../../components/form-styles";
 import Modal from "../../components/modal";
+import SetPinDialog from "../../components/set-pin-dialog";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
   apiFetch,
@@ -47,6 +48,7 @@ export default function StaffPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [removing, setRemoving] = useState<StaffMember | null>(null);
+  const [resetting, setResetting] = useState<StaffMember | null>(null);
 
   const visible = staff.data?.filter((s) => matches(search, s.name, s.role));
 
@@ -103,6 +105,17 @@ export default function StaffPage() {
           danger
           onConfirm={() => remove(removing)}
           onClose={() => setRemoving(null)}
+        />
+      )}
+      {resetting && staff.data && (
+        <SetPinDialog
+          staff={staff.data}
+          staffId={resetting.id}
+          onClose={() => setResetting(null)}
+          onSaved={(member) => {
+            setResetting(null);
+            setNotice(`${member.name} has a new PIN. Tell them in person.`);
+          }}
         />
       )}
       {editing && (
@@ -199,6 +212,12 @@ export default function StaffPage() {
                   Edit
                 </button>
                 <button
+                  onClick={() => setResetting(s)}
+                  className="font-medium text-brand-deep hover:underline"
+                >
+                  Reset PIN
+                </button>
+                <button
                   onClick={() => setRemoving(s)}
                   className="font-medium text-red-700 hover:underline"
                 >
@@ -278,8 +297,8 @@ function EditStaffForm({
         />
       </label>
       <p className="text-xs text-muted">
-        Their PIN stays the same. To change a PIN, remove them and add them
-        again with a new one.
+        Their PIN stays the same. To give them a new PIN, use Reset PIN on the
+        staff list.
       </p>
       {error && <p className="text-sm text-red-700">{error}</p>}
       <div className="mt-2 flex justify-end gap-3">

@@ -20,6 +20,7 @@ import type {
   PaymentMethod,
   Product,
   ProductVariant,
+  RequestKind,
   RequestStatus,
   StoreRequest,
   Supplier,
@@ -52,6 +53,7 @@ type ProductRow = {
   cost_price: number | null;
   barcode: string | null;
   image_url: string | null;
+  category: string | null;
   quantity: number;
   wc_id: number | null;
   updated_at: Date;
@@ -67,6 +69,7 @@ const toProduct = (row: ProductRow): Product => ({
   ...(row.image_url !== null
     ? { imageUrl: row.image_url as CloudinaryUrl }
     : {}),
+  ...(row.category !== null ? { category: row.category } : {}),
   ...(row.wc_id !== null ? { fromWebsite: true } : {}),
 });
 
@@ -133,6 +136,7 @@ const COLUMN_ALIASES = {
   costPrice: ["cost_price", "cost price", "cost", "purchase price", "buying price"],
   quantity: ["quantity", "qty", "stock", "stock quantity", "in stock"],
   imageUrl: ["image_url", "image url", "image", "images"],
+  category: ["category", "categories"],
   barcode: ["barcode", "gtin, upc, ean, or isbn", "gtin", "upc", "ean"],
 } as const;
 
@@ -459,6 +463,43 @@ app.put("/staff/:id", adminOnly, async (req, res) => {
   res.json({ id: req.params.id, name, role });
 });
 
+// Give a staff member a new PIN, e.g. when they have forgotten theirs.
+app.put("/staff/:id/pin", adminOnly, async (req, res) => {
+  const pin = String(req.body?.pin ?? "").trim();
+  if (!/^\d{4,8}$/.test(pin)) {
+    res.status(400).json({ error: "PIN must be 4 to 8 digits" });
+    return;
+  }
+  const staff = await fetchStaff();
+  const member = staff.find((m) => m.id === req.params.id);
+  if (!member) {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+  if (staff.some((m) => m.id !== member.id && pinMatches(m, pin))) {
+    res.status(409).json({ error: "Another staff member already uses that PIN" });
+    return;
+  }
+  const salt = randomBytes(16).toString("hex");
+  await transaction(async (client) => {
+    await client.query(
+      "UPDATE staff SET salt = $2, pin_hash = $3 WHERE id = $1",
+      [member.id, salt, hashPin(pin, salt)],
+    );
+    // Their open PIN requests are answered now, including one picked from the
+    // Requests page whose name didn't match a staff member.
+    await client.query(
+      `UPDATE store_requests SET status = 'done', decided_at = now(),
+         requested_by_staff_id = $1,
+         decision_note = 'New PIN set for ' || $2 || '. Tell them in person.'
+       WHERE kind = 'pin_reset' AND status = 'pending'
+         AND (requested_by_staff_id = $1 OR id = $3)`,
+      [member.id, member.name, optionalText(req.body?.requestId)],
+    );
+  });
+  res.json({ id: member.id, name: member.name });
+});
+
 app.delete("/staff/:id", adminOnly, async (req, res) => {
   const { rowCount } = await db.query("DELETE FROM staff WHERE id = $1", [
     req.params.id,
@@ -544,6 +585,7 @@ const readProductInput = (body: any): ProductInput | string => {
     const imageUrl = String(body?.imageUrl ?? "").trim();
     if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/"))
       return "Image link must start with https://res.cloudinary.com/";
+    const category = String(body?.category ?? "").trim();
     return {
       sku,
       name,
@@ -551,6 +593,7 @@ const readProductInput = (body: any): ProductInput | string => {
       quantity: 0,
       variants,
       ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
+      ...(category ? { category } : {}),
     };
   }
   const product = readSimpleProduct(body);
@@ -576,6 +619,7 @@ const readSimpleProduct = (
   const imageUrl = String(body?.imageUrl ?? "").trim();
   if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/"))
     return "Image link must start with https://res.cloudinary.com/";
+  const category = String(body?.category ?? "").trim();
 
   return {
     sku,
@@ -585,6 +629,7 @@ const readSimpleProduct = (
     ...(hasCost ? { costPrice } : {}),
     ...(barcode ? { barcode } : {}),
     ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
+    ...(category ? { category } : {}),
   };
 };
 
@@ -693,6 +738,7 @@ const productValues = (input: Omit<ProductInput, "variants">) => [
   input.barcode ?? null,
   input.imageUrl ?? null,
   input.quantity,
+  input.category ?? null,
 ];
 
 app.post("/products", adminOnly, async (req, res) => {
@@ -709,8 +755,8 @@ app.post("/products", adminOnly, async (req, res) => {
 
   const product = await transaction(async (client) => {
     const { rows } = await client.query<ProductRow>(
-      `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, category, id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [...productValues(input), randomUUID()],
     );
     await saveVariants(client, rows[0].id, input.variants);
@@ -740,8 +786,9 @@ app.put("/products/:id", adminOnly, async (req, res) => {
   const product = await transaction(async (client) => {
     const { rows } = await client.query<ProductRow>(
       `UPDATE products SET sku = $1, name = $2, price = $3, cost_price = $4,
-         barcode = $5, image_url = $6, quantity = $7, updated_at = now()
-       WHERE id = $8 RETURNING *`,
+         barcode = $5, image_url = $6, quantity = $7, category = $8,
+         updated_at = now()
+       WHERE id = $9 RETURNING *`,
       [...productValues(input), id],
     );
     if (rows.length === 0) throw new HttpError(404, "Product not found");
@@ -802,6 +849,7 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
     costPrice: column("costPrice"),
     imageUrl: column("imageUrl"),
     barcode: column("barcode"),
+    category: column("category"),
   };
   const missing = (["sku", "name", "price", "quantity"] as const).filter(
     (key) => cols[key] === -1,
@@ -851,6 +899,12 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
     const image = cols.imageUrl === -1 ? "" : (cells[cols.imageUrl] ?? "").trim();
     const barcode =
       cols.barcode === -1 ? "" : (cells[cols.barcode] ?? "").trim();
+    // A WooCommerce export lists "Skincare > Serums, Sale": keep the first
+    // category's top level.
+    const category =
+      cols.category === -1
+        ? ""
+        : (cells[cols.category] ?? "").split(",")[0].split(">")[0].trim();
     const fail = (message: string) => errors.push({ row: rowNumber, message });
 
     if (!sku) return fail("SKU is empty");
@@ -890,6 +944,7 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
       ...(image.startsWith("https://res.cloudinary.com/")
         ? { imageUrl: image as CloudinaryUrl }
         : {}),
+      ...(category ? { category } : {}),
     });
   });
 
@@ -901,9 +956,9 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
   // One statement for the whole file. Products are matched by SKU; columns
   // missing from the file keep their current values.
   const result = await db.query<{ inserted: boolean }>(
-    `INSERT INTO products (id, sku, name, price, cost_price, barcode, image_url, quantity)
+    `INSERT INTO products (id, sku, name, price, cost_price, barcode, image_url, quantity, category)
      SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::numeric[],
-                          $5::numeric[], $6::text[], $7::text[], $8::int[])
+                          $5::numeric[], $6::text[], $7::text[], $8::int[], $9::text[])
      ON CONFLICT (sku) DO UPDATE SET
        name = EXCLUDED.name,
        -- The online shop sets the price of products copied from it.
@@ -911,6 +966,7 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
        cost_price = COALESCE(EXCLUDED.cost_price, products.cost_price),
        barcode = COALESCE(EXCLUDED.barcode, products.barcode),
        image_url = COALESCE(EXCLUDED.image_url, products.image_url),
+       category = COALESCE(EXCLUDED.category, products.category),
        quantity = EXCLUDED.quantity,
        updated_at = now()
      RETURNING (xmax = 0) AS inserted`,
@@ -923,6 +979,7 @@ app.post("/inventory/import", adminOnly, async (req, res) => {
       valid.map((p) => p.barcode ?? null),
       valid.map((p) => p.imageUrl ?? null),
       valid.map((p) => p.quantity),
+      valid.map((p) => p.category ?? null),
     ],
   );
   const added = result.rows.filter((r) => r.inserted).length;
@@ -1374,9 +1431,11 @@ app.delete("/expenses/:id", adminOnly, async (req, res) => {
 
 type StoreRequestRow = {
   id: string;
+  kind: RequestKind;
   title: string;
   details: string | null;
   requested_by: string;
+  requested_by_staff_id: string | null;
   amount: number | null;
   status: RequestStatus;
   decision_note: string | null;
@@ -1386,9 +1445,13 @@ type StoreRequestRow = {
 
 const toStoreRequest = (row: StoreRequestRow): StoreRequest => ({
   id: row.id,
+  kind: row.kind,
   title: row.title,
   ...(row.details !== null ? { details: row.details } : {}),
   requestedBy: row.requested_by,
+  ...(row.requested_by_staff_id !== null
+    ? { staffId: row.requested_by_staff_id }
+    : {}),
   ...(row.amount !== null ? { amount: row.amount } : {}),
   status: row.status,
   ...(row.decision_note !== null ? { decisionNote: row.decision_note } : {}),
@@ -1422,7 +1485,15 @@ app.get("/requests/mine", anyone, async (_req, res) => {
 // admin may record one on someone else's behalf.
 app.post("/requests", anyone, async (req, res) => {
   const session = sessionOf(res);
-  const title = String(req.body?.title ?? "").trim();
+  // A logged-in staff member can also ask for a new PIN from here.
+  const kind: RequestKind =
+    session.role === "staff" && req.body?.kind === "pin_reset"
+      ? "pin_reset"
+      : "general";
+  const title =
+    kind === "pin_reset"
+      ? PIN_REQUEST_TITLE
+      : String(req.body?.title ?? "").trim();
   const requestedBy =
     session.role === "staff"
       ? session.name
@@ -1441,11 +1512,12 @@ app.post("/requests", anyone, async (req, res) => {
     return;
   }
   const { rows } = await db.query<StoreRequestRow>(
-    `INSERT INTO store_requests (id, title, details, requested_by,
+    `INSERT INTO store_requests (id, kind, title, details, requested_by,
        requested_by_staff_id, amount)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       randomUUID(),
+      kind,
       title,
       optionalText(req.body?.details),
       requestedBy,
@@ -1454,6 +1526,61 @@ app.post("/requests", anyone, async (req, res) => {
     ],
   );
   res.status(201).json(toStoreRequest(rows[0]));
+});
+
+const PIN_REQUEST_TITLE = "New PIN needed";
+
+// Someone who has forgotten their PIN can't log in, so this needs no login.
+// It only ever creates a PIN request for the admin, and each device may send
+// a few per hour.
+const MAX_PIN_REQUESTS = 3;
+const pinRequests = new Map<string, { count: number; until: number }>();
+
+app.post("/pin-requests", async (req, res) => {
+  const key = req.ip ?? "unknown";
+  const recent = pinRequests.get(key);
+  const sent = recent && recent.until > Date.now() ? recent.count : 0;
+  if (sent >= MAX_PIN_REQUESTS) {
+    res
+      .status(429)
+      .json({ error: "Too many requests from this device. Try again later." });
+    return;
+  }
+  const name = String(req.body?.name ?? "").trim().slice(0, 100);
+  if (!name) {
+    res.status(400).json({ error: "Enter your name" });
+    return;
+  }
+  pinRequests.set(key, { count: sent + 1, until: Date.now() + 3600_000 });
+
+  // Link it to the staff member when exactly one has that name.
+  const { rows: matches } = await db.query<{ id: string }>(
+    "SELECT id FROM staff WHERE lower(name) = lower($1)",
+    [name],
+  );
+  const staffId = matches.length === 1 ? matches[0].id : null;
+  // One open PIN request per person is enough.
+  const { rowCount: open } = await db.query(
+    `SELECT 1 FROM store_requests WHERE kind = 'pin_reset' AND status = 'pending'
+       AND lower(requested_by) = lower($1)`,
+    [name],
+  );
+  if (!open) {
+    await db.query(
+      `INSERT INTO store_requests (id, kind, title, details, requested_by,
+         requested_by_staff_id)
+       VALUES ($1, 'pin_reset', $2, $3, $4, $5)`,
+      [
+        randomUUID(),
+        PIN_REQUEST_TITLE,
+        optionalText(String(req.body?.note ?? "").slice(0, 500)),
+        name,
+        staffId,
+      ],
+    );
+  }
+  // The same answer either way, so this can't be used to find staff names.
+  res.status(201).json({ ok: true });
 });
 
 // Approve, reject or mark a request done, with an optional note.

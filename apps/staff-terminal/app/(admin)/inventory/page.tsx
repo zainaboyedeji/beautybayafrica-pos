@@ -12,9 +12,11 @@ import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { PRIMARY_BUTTON } from "../../components/form-styles";
 import {
   apiFetch,
+  categoryList,
   describeError,
   fetchCatalog,
   money,
+  sellables,
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
@@ -27,7 +29,31 @@ type ImportResult = {
 };
 
 const TEMPLATE =
-  "sku,barcode,name,cost_price,price,quantity,image_url\nBEV-001,5012345678900,Bottled Water 75cl,500,800,40,https://res.cloudinary.com/your-cloud/image/upload/water.jpg\nSNK-001,,Potato Chips,900,1500,25,\n";
+  "sku,barcode,name,category,cost_price,price,quantity,image_url\nBEV-001,5012345678900,Bottled Water 75cl,Drinks,500,800,40,https://res.cloudinary.com/your-cloud/image/upload/water.jpg\nSNK-001,,Potato Chips,Snacks,900,1500,25,\n";
+
+// Same threshold as the dashboard's low-stock list.
+const LOW_STOCK = 5;
+const NO_CATEGORY = "__none__";
+
+const STOCK_FILTERS = {
+  "": "All stock levels",
+  in: "In stock",
+  low: `Low stock (${LOW_STOCK} or fewer)`,
+  out: "Out of stock",
+} as const;
+const SOURCE_FILTERS = {
+  "": "All sources",
+  website: "From the website",
+  pos: "Added in the POS",
+} as const;
+const TYPE_FILTERS = {
+  "": "All products",
+  options: "With options",
+  single: "Without options",
+} as const;
+
+const SELECT =
+  "rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand";
 
 export default function InventoryPage() {
   const catalog = useLoad(fetchCatalog);
@@ -38,12 +64,58 @@ export default function InventoryPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [stockFilter, setStockFilter] =
+    useState<keyof typeof STOCK_FILTERS>("");
+  const [source, setSource] = useState<keyof typeof SOURCE_FILTERS>("");
+  const [type, setType] = useState<keyof typeof TYPE_FILTERS>("");
+  // Products whose options are showing.
+  const [open, setOpen] = useState<Set<string>>(new Set());
 
-  const products = catalog.data?.products.filter((p) =>
-    [p, ...(p.variants ?? [])].some((x) =>
-      matches(search, x.name, x.sku, x.barcode),
-    ),
+  const all = catalog.data?.products ?? [];
+  const stock = catalog.data?.stock ?? {};
+  const categories = categoryList(all);
+  const stockLevel = (p: Product) => {
+    if ((stock[p.id] ?? 0) <= 0) return "out";
+    // One shade running low counts, as on the dashboard.
+    return sellables(p).some((s) => (stock[s.key] ?? 0) <= LOW_STOCK)
+      ? "low"
+      : "in";
+  };
+  const optionMatches = (p: Product) =>
+    search.trim() !== "" &&
+    (p.variants ?? []).some((v) => matches(search, v.name, v.sku, v.barcode));
+
+  const products = catalog.data?.products.filter(
+    (p) =>
+      (matches(search, p.name, p.sku, p.barcode, p.category) ||
+        optionMatches(p)) &&
+      (!category ||
+        (category === NO_CATEGORY ? !p.category : p.category === category)) &&
+      (!stockFilter ||
+        (stockFilter === "in"
+          ? stockLevel(p) !== "out"
+          : stockLevel(p) === stockFilter)) &&
+      (!source || (source === "website") === !!p.fromWebsite) &&
+      (!type || (type === "options") === !!p.variants),
   );
+  const filtered = !!(search || category || stockFilter || source || type);
+  const clearFilters = () => {
+    setSearch("");
+    setCategory("");
+    setStockFilter("");
+    setSource("");
+    setType("");
+  };
+  const isOpen = (p: Product) => open.has(p.id) || optionMatches(p);
+  const toggle = (id: string) =>
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const withOptions = (products ?? []).filter((p) => p.variants);
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -119,6 +191,7 @@ export default function InventoryPage() {
             <code className="rounded bg-surface-alt px-1">quantity</code>, plus
             an optional{" "}
             <code className="rounded bg-surface-alt px-1">barcode</code>,{" "}
+            <code className="rounded bg-surface-alt px-1">category</code>,{" "}
             <code className="rounded bg-surface-alt px-1">cost_price</code> and{" "}
             <code className="rounded bg-surface-alt px-1">image_url</code>{" "}
             (Cloudinary link). Products are matched by SKU: existing ones are
@@ -175,15 +248,105 @@ export default function InventoryPage() {
         </section>
       </div>
 
-      <div className="mt-6">
-        <SearchBox
-          value={search}
-          onChange={setSearch}
-          placeholder="Search by name, SKU or barcode"
-        />
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="min-w-64 flex-1">
+          <SearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name, SKU, barcode or category"
+          />
+        </div>
+        <select
+          aria-label="Category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className={SELECT}
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c} ({all.filter((p) => p.category === c).length})
+            </option>
+          ))}
+          <option value={NO_CATEGORY}>
+            No category ({all.filter((p) => !p.category).length})
+          </option>
+        </select>
+        <select
+          aria-label="Stock level"
+          value={stockFilter}
+          onChange={(e) =>
+            setStockFilter(e.target.value as keyof typeof STOCK_FILTERS)
+          }
+          className={SELECT}
+        >
+          {Object.entries(STOCK_FILTERS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Source"
+          value={source}
+          onChange={(e) =>
+            setSource(e.target.value as keyof typeof SOURCE_FILTERS)
+          }
+          className={SELECT}
+        >
+          {Object.entries(SOURCE_FILTERS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Type"
+          value={type}
+          onChange={(e) => setType(e.target.value as keyof typeof TYPE_FILTERS)}
+          className={SELECT}
+        >
+          {Object.entries(TYPE_FILTERS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div className="mt-4">
+      {products && (
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-muted">
+          <span>
+            Showing {products.length} of {all.length} products
+          </span>
+          {filtered && (
+            <button
+              onClick={clearFilters}
+              className="font-medium text-brand-deep hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
+          {withOptions.length > 0 && (
+            <span className="ml-auto flex gap-4">
+              <button
+                onClick={() => setOpen(new Set(withOptions.map((p) => p.id)))}
+                className="font-medium text-brand-deep hover:underline"
+              >
+                Open all options
+              </button>
+              <button
+                onClick={() => setOpen(new Set())}
+                className="font-medium text-brand-deep hover:underline"
+              >
+                Close all
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3">
         {catalog.failed ? (
           <LoadError />
         ) : !catalog.data || !products ? (
@@ -194,10 +357,11 @@ export default function InventoryPage() {
           <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
             <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
               <tr>
+                <th className="w-12 px-4 py-3 text-right">#</th>
                 <th className="px-4 py-3">Image</th>
+                <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3">Barcode</th>
-                <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3 text-right">Cost price</th>
                 <th className="px-4 py-3 text-right">Price</th>
                 <th className="px-4 py-3 text-right">Margin</th>
@@ -206,12 +370,16 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {products.map((p) => {
-                const stock = catalog.data?.stock ?? {};
+              {products.map((p, index) => {
                 const prices = p.variants?.map((v) => v.price) ?? [];
+                const expanded = !!p.variants && isOpen(p);
+                const level = stockLevel(p);
                 return (
                   <Fragment key={p.id}>
-                    <tr>
+                    <tr className={expanded ? "bg-brand-soft/30" : undefined}>
+                      <td className="px-4 py-3 text-right text-muted tabular-nums">
+                        {index + 1}
+                      </td>
                       <td className="px-4 py-2">
                         {p.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -224,22 +392,54 @@ export default function InventoryPage() {
                           <div className="h-10 w-10 rounded-md bg-surface-alt" />
                         )}
                       </td>
+                      <td className="px-4 py-3">
+                        {p.variants ? (
+                          <button
+                            onClick={() => toggle(p.id)}
+                            aria-expanded={expanded}
+                            className="group flex items-start gap-2 text-left"
+                          >
+                            <span
+                              aria-hidden
+                              className={`mt-0.5 inline-block text-xs text-brand-deep transition-transform ${
+                                expanded ? "rotate-90" : ""
+                              }`}
+                            >
+                              ▶
+                            </span>
+                            <span>
+                              <span className="font-medium group-hover:text-brand-deep">
+                                {p.name}
+                              </span>
+                              <span className="ml-2 whitespace-nowrap rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                                {p.variants.length} options
+                              </span>
+                              {p.category && (
+                                <span className="block text-xs text-muted">
+                                  {p.category}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        ) : (
+                          <>
+                            <span className="font-medium">{p.name}</span>
+                            {p.category && (
+                              <span className="block text-xs text-muted">
+                                {p.category}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-muted">{p.sku}</td>
                       <td className="px-4 py-3 text-muted">
                         {p.barcode ?? "—"}
                       </td>
-                      <td className="px-4 py-3 font-medium">
-                        {p.name}
-                        {p.variants && (
-                          <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
-                            {p.variants.length} options
-                          </span>
-                        )}
-                      </td>
                       {p.variants ? (
                         <>
                           <td className="px-4 py-3 text-right">—</td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="whitespace-nowrap px-4 py-3 text-right">
                             {Math.min(...prices) === Math.max(...prices)
                               ? money.format(prices[0])
                               : `${money.format(Math.min(...prices))} – ${money.format(Math.max(...prices))}`}
@@ -249,7 +449,15 @@ export default function InventoryPage() {
                       ) : (
                         <PriceCells item={p} />
                       )}
-                      <td className="px-4 py-3 text-right">
+                      <td
+                        className={`px-4 py-3 text-right tabular-nums ${
+                          level === "out"
+                            ? "font-medium text-red-700"
+                            : level === "low"
+                              ? "font-medium text-amber-700"
+                              : ""
+                        }`}
+                      >
                         {stock[p.id] ?? 0}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -261,23 +469,33 @@ export default function InventoryPage() {
                         </button>
                       </td>
                     </tr>
-                    {p.variants?.map((v) => (
-                      <tr key={v.id} className="bg-surface-alt/50">
-                        <td />
-                        <td className="px-4 py-2 text-muted">{v.sku}</td>
-                        <td className="px-4 py-2 text-muted">
-                          {v.barcode ?? "—"}
-                        </td>
-                        <td className="px-4 py-2 pl-8">
-                          <span className="text-muted">↳</span> {v.name}
-                        </td>
-                        <PriceCells item={v} />
-                        <td className="px-4 py-2 text-right">
-                          {stock[v.id] ?? 0}
-                        </td>
-                        <td />
-                      </tr>
-                    ))}
+                    {expanded &&
+                      p.variants?.map((v) => (
+                        <tr key={v.id} className="bg-surface-alt/60">
+                          <td />
+                          <td />
+                          <td className="px-4 py-2 pl-10">
+                            <span className="text-muted">↳</span> {v.name}
+                          </td>
+                          <td className="px-4 py-2 text-muted">{v.sku}</td>
+                          <td className="px-4 py-2 text-muted">
+                            {v.barcode ?? "—"}
+                          </td>
+                          <PriceCells item={v} />
+                          <td
+                            className={`px-4 py-2 text-right tabular-nums ${
+                              (stock[v.id] ?? 0) <= 0
+                                ? "font-medium text-red-700"
+                                : (stock[v.id] ?? 0) <= LOW_STOCK
+                                  ? "font-medium text-amber-700"
+                                  : ""
+                            }`}
+                          >
+                            {stock[v.id] ?? 0}
+                          </td>
+                          <td />
+                        </tr>
+                      ))}
                   </Fragment>
                 );
               })}

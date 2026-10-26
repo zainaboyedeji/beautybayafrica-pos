@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { INPUT, PRIMARY_BUTTON } from "../components/form-styles";
 import { API_URL, describeError } from "../lib/api";
@@ -37,59 +38,83 @@ export default function LoginPage() {
     }
   };
 
+  const isStaff = mode === "staff";
+
   return (
     <div className="flex min-h-screen text-ink">
       <FeatureShowcase />
-      <div className="flex flex-1 items-center justify-center bg-surface-alt p-6">
+      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-surface-alt to-white p-6">
+        {/* One soft glow behind the card; nothing moves. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-soft/60 blur-3xl"
+        />
         <form
-          className="w-full max-w-sm rounded-xl bg-white p-6 shadow-sm"
+          className="relative w-full max-w-sm rounded-2xl border border-line bg-white px-7 py-8 shadow-lg shadow-brand-deep/5"
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.png"
-            alt="Beauty Bay Africa"
-            className="mx-auto h-20 w-20"
-          />
-          <p className="mt-3 text-center text-sm font-medium tracking-wide text-brand-deep">
-            Beauty Bay Africa
-          </p>
-          <h1 className="mt-4 text-2xl font-semibold">Log in</h1>
-          <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-surface-alt p-1 text-sm font-medium">
+          <div className="flex flex-col items-center text-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="" className="h-16 w-16" />
+            <p className="mt-2 text-xs font-medium uppercase tracking-[0.2em] text-brand-deep">
+              Beauty Bay Africa
+            </p>
+            <h1 className="mt-5 text-3xl">Welcome back</h1>
+            <p className="mt-1.5 text-sm text-muted">
+              {isStaff
+                ? "Enter your PIN to open the till."
+                : "Enter the admin password to open the back office."}
+            </p>
+          </div>
+
+          <div
+            role="tablist"
+            aria-label="Log in as"
+            className="mt-6 grid grid-cols-2 gap-1 rounded-xl bg-surface-alt p-1 text-sm font-medium"
+          >
             {(["staff", "admin"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
+                role="tab"
+                aria-selected={mode === m}
                 onClick={() => {
                   setMode(m);
                   setSecret("");
                   setShowSecret(false);
                   setError(null);
                 }}
-                className={`rounded-md py-2 ${
-                  mode === m ? "bg-white shadow-sm" : "text-muted"
+                className={`rounded-lg py-2 transition-colors ${
+                  mode === m
+                    ? "bg-white text-brand-deep shadow-sm"
+                    : "text-muted hover:text-ink"
                 }`}
               >
                 {m === "staff" ? "Staff" : "Admin"}
               </button>
             ))}
           </div>
-          <label className="mt-5 block text-sm font-medium">
-            {mode === "staff" ? "PIN" : "Admin password"}
+
+          <label className="mt-6 block text-sm font-medium">
+            {isStaff ? "PIN" : "Password"}
             <div className="relative">
               <input
                 key={mode}
                 autoFocus
                 required
                 type={showSecret ? "text" : "password"}
-                inputMode={mode === "staff" ? "numeric" : undefined}
-                autoComplete={mode === "admin" ? "current-password" : "off"}
+                inputMode={isStaff ? "numeric" : undefined}
+                autoComplete={isStaff ? "off" : "current-password"}
+                placeholder={isStaff ? "••••" : undefined}
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                className={`${INPUT} pr-11`}
+                className={`${INPUT} h-12 pr-11 ${
+                  // Padding on both sides keeps the PIN centred past the eye button.
+                  isStaff ? "pl-11 text-center text-lg tracking-[0.4em]" : ""
+                }`}
               />
               <button
                 type="button"
@@ -102,15 +127,34 @@ export default function LoginPage() {
               </button>
             </div>
           </label>
-          {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+          {error && (
+            <p
+              role="alert"
+              className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {error}
+            </p>
+          )}
           <button
             type="submit"
             disabled={saving}
-            className={`${PRIMARY_BUTTON} mt-5 w-full`}
+            className={`${PRIMARY_BUTTON} mt-6 h-12 w-full`}
           >
             {saving ? "Logging in…" : "Log in"}
           </button>
         </form>
+        {isStaff ? (
+          <Link
+            href="/forgot-pin"
+            className="relative mt-6 text-center text-xs font-medium text-muted hover:text-brand-deep"
+          >
+            Forgot your PIN? Request a new one
+          </Link>
+        ) : (
+          <p className="relative mt-6 text-center text-xs text-muted">
+            Staff log in with their PIN on the Staff tab.
+          </p>
+        )}
       </div>
     </div>
   );

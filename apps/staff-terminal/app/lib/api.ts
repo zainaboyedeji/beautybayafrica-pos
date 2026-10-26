@@ -85,6 +85,12 @@ export const orderItem = (s: Sellable, quantity: number) => ({
   quantity,
 });
 
+/** The categories in use, in alphabetical order. */
+export const categoryList = (products: Product[]) =>
+  [...new Set(products.flatMap((p) => p.category ?? []))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+
 export async function fetchCatalog(): Promise<Catalog> {
   const [productsRes, inventoryRes] = await Promise.all([
     apiFetch("/products"),

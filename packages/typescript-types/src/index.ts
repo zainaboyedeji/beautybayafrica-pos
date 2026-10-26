@@ -23,6 +23,8 @@ export interface Product {
   /** Scannable code (EAN, UPC, …), kept as text so leading zeros survive. */
   barcode?: string;
   imageUrl?: CloudinaryUrl;
+  /** e.g. Skincare or Hair care. */
+  category?: string;
   /** Copied from the online shop, which sets its selling price. */
   fromWebsite?: boolean;
   /**
@@ -91,12 +93,18 @@ export interface Expense {
 
 export type RequestStatus = "pending" | "approved" | "rejected" | "done";
 
+/** "pin_reset": a staff member asking the admin for a new PIN. */
+export type RequestKind = "general" | "pin_reset";
+
 /** An official request made in the store, and the admin's decision on it. */
 export interface StoreRequest {
   id: string;
+  kind: RequestKind;
   title: string;
   details?: string;
   requestedBy: string;
+  /** The staff member who asked, when known (for PIN requests). */
+  staffId?: string;
   amount?: number;
   status: RequestStatus;
   decisionNote?: string;

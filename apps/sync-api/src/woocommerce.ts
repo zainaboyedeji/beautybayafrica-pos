@@ -2,7 +2,8 @@ import { db, transaction } from "./db";
 import { randomUUID } from "node:crypto";
 
 // Copies the online shop's products from WooCommerce's public Store API:
-// names, selling prices, photos and options. Stock, cost prices, barcodes
+// names, selling prices, photos, options and (for products without one) the
+// category. Stock, cost prices, barcodes
 // and SKUs belong to the POS and are never changed here. Products are
 // matched by their WooCommerce id (or SKU, the first time).
 const SHOP_URL = process.env.WOOCOMMERCE_URL ?? "https://beautybayafrica.com";
@@ -18,6 +19,7 @@ type StoreItem = {
   prices: { price: string; currency_minor_unit: number };
   images: { src: string }[];
   brands?: { name: string }[];
+  categories?: { id: number; name: string }[];
   attributes: { name: string; terms?: { name: string }[] }[];
 };
 
@@ -65,6 +67,62 @@ const imageOf = (item: StoreItem) => {
   return src?.startsWith("https://res.cloudinary.com/") ? src : null;
 };
 
+type StoreCategory = { id: number; name: string; parent: number };
+
+// Website categories used for promotions rather than for what a product is.
+const PROMOTIONAL_CATEGORIES = new Set([
+  "ad",
+  "new in",
+  "best seller",
+  "beauty bay",
+  "uncategorized",
+]);
+
+/**
+ * Each website category's main (top-level) category name, e.g. "Acne &
+ * Breakouts" (under Skincare › Concern) → "Skincare".
+ */
+async function fetchMainCategories(): Promise<Map<number, string>> {
+  const all: StoreCategory[] = [];
+  for (let page = 1; ; page++) {
+    const res = await fetch(
+      `${SHOP_URL}/wp-json/wc/store/v1/products/categories?per_page=100&page=${page}`,
+      { signal: AbortSignal.timeout(60_000) },
+    );
+    if (!res.ok) throw new Error(`Shop answered ${res.status} for categories`);
+    all.push(...((await res.json()) as StoreCategory[]));
+    if (page >= Number(res.headers.get("x-wp-totalpages") ?? 1)) break;
+    await pause();
+  }
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const main = new Map<number, string>();
+  for (const category of all) {
+    let top = category;
+    // `seen` guards against a loop in badly saved data.
+    const seen = new Set<number>();
+    while (top.parent && byId.has(top.parent) && !seen.has(top.id)) {
+      seen.add(top.id);
+      top = byId.get(top.parent)!;
+    }
+    const name = decode(top.name);
+    if (!PROMOTIONAL_CATEGORIES.has(name.toLowerCase())) main.set(category.id, name);
+  }
+  return main;
+}
+
+/** The main category most of the product's website categories fall under. */
+const categoryOf = (item: StoreItem, main: Map<number, string>) => {
+  const counts = new Map<string, number>();
+  for (const c of item.categories ?? []) {
+    const name = main.get(c.id);
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [name, count] of counts)
+    if (best === null || count > counts.get(best)!) best = name;
+  return best;
+};
+
 const brandOf = (item: StoreItem) =>
   decode(
     item.brands?.[0]?.name ??
@@ -105,6 +163,7 @@ type ExistingProduct = {
   name: string;
   price: number;
   image_url: string | null;
+  category: string | null;
 };
 type ExistingVariant = {
   id: string;
@@ -127,12 +186,14 @@ export type SyncResult = {
 
 /** Fetches every product and option from the shop and copies them in. */
 export async function syncFromWooCommerce(): Promise<SyncResult> {
+  const main = await fetchMainCategories();
+  await pause();
   const simple = await fetchAll("type=simple");
   await pause();
   const variable = await fetchAll("type=variable");
   await pause();
   const variations = await fetchAll("type=variation");
-  return applyItems([...simple, ...variable], variations);
+  return applyItems([...simple, ...variable], variations, main);
 }
 
 /**
@@ -151,19 +212,20 @@ export async function syncOneProduct(wcId: number): Promise<SyncResult | null> {
   if (item.type !== "simple" && item.type !== "variable") return null;
   const variations =
     item.type === "variable" ? await fetchAll(`type=variation&parent=${item.id}`) : [];
-  return applyItems([item], variations);
+  return applyItems([item], variations, await fetchMainCategories());
 }
 
 async function applyItems(
   items: StoreItem[],
   variations: StoreItem[],
+  mainCategories: Map<number, string>,
 ): Promise<SyncResult> {
   const products = [...items].sort((a, b) => a.id - b.id);
 
   // `linked` says the row already had its WooCommerce id saved.
   const existing = (
     await db.query<ExistingProduct>(
-      "SELECT id, wc_id, wc_id IS NOT NULL AS linked, sku, name, price, image_url FROM products",
+      "SELECT id, wc_id, wc_id IS NOT NULL AS linked, sku, name, price, image_url, category FROM products",
     )
   ).rows;
   const existingVariants = (
@@ -223,6 +285,7 @@ async function applyItems(
         continue;
       }
       const image = imageOf(item);
+      const category = categoryOf(item, mainCategories);
 
       const match =
         existing.find((p) => p.wc_id === item.id) ??
@@ -237,22 +300,25 @@ async function applyItems(
           !match.linked ||
           match.name !== name ||
           match.price !== price ||
-          (image !== null && match.image_url !== image)
+          (image !== null && match.image_url !== image) ||
+          // A category set in the POS is kept; the website's only fills a gap.
+          (match.category === null && category !== null)
         ) {
           await client.query(
             `UPDATE products SET wc_id = $2, name = $3, price = $4,
-               image_url = COALESCE($5, image_url), updated_at = now()
+               image_url = COALESCE($5, image_url),
+               category = COALESCE(category, $6), updated_at = now()
              WHERE id = $1`,
-            [productId, item.id, name, price, image],
+            [productId, item.id, name, price, image, category],
           );
           changed = true;
         }
       } else {
         productId = randomUUID();
         await client.query(
-          `INSERT INTO products (id, wc_id, sku, name, price, image_url, quantity)
-           VALUES ($1, $2, $3, $4, $5, $6, 0)`,
-          [productId, item.id, newSku(item), name, price, image],
+          `INSERT INTO products (id, wc_id, sku, name, price, image_url, category, quantity)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 0)`,
+          [productId, item.id, newSku(item), name, price, image, category],
         );
         result.added++;
       }

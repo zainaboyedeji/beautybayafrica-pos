@@ -93,6 +93,9 @@ services:
       - type: rewrite
         source: /staff
         destination: /staff.html
+      - type: rewrite
+        source: /forgot-pin
+        destination: /forgot-pin.html
     envVars:
       - key: NODE_VERSION
         value: "24"

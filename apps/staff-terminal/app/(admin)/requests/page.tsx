@@ -10,10 +10,12 @@ import RequestStatusCell, {
   STATUS_LABELS,
 } from "../../components/request-status";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
+import SetPinDialog from "../../components/set-pin-dialog";
 import {
   apiFetch,
   describeError,
   fetchRequests,
+  fetchStaff,
   money,
   useLoad,
 } from "../../lib/api";
@@ -35,6 +37,9 @@ const NEXT_ACTIONS: Record<
 
 export default function RequestsPage() {
   const requests = useLoad(fetchRequests);
+  const staff = useLoad(fetchStaff);
+  // The PIN request being answered with a new PIN.
+  const [settingPin, setSettingPin] = useState<StoreRequest | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<RequestStatus | "">("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,6 +82,12 @@ export default function RequestsPage() {
     }
   };
 
+  // What the admin can do next with this request.
+  const actions = (r: StoreRequest) =>
+    r.kind === "pin_reset" && r.status === "pending"
+      ? NEXT_ACTIONS.pending.filter((a) => a.status === "rejected")
+      : NEXT_ACTIONS[r.status];
+
   return (
     <div className="mx-auto max-w-6xl">
       <div className="flex items-center justify-between">
@@ -86,20 +97,34 @@ export default function RequestsPage() {
         </Link>
       </div>
       <p className="mt-1 text-sm text-muted">
-        Requests made by staff from the Requests page (money, stock, repairs,
-        time off). Approve or reject them here; the person who asked sees your
-        decision and note.
+        Requests made by staff (money, stock, repairs, time off), and PIN
+        requests from staff who forgot theirs. Approve or reject them here; the
+        person who asked sees your decision and note.
       </p>
       <Notice text={notice} />
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+      {settingPin && staff.data && (
+        <SetPinDialog
+          staff={staff.data}
+          staffId={settingPin.staffId}
+          requestedBy={settingPin.requestedBy}
+          requestId={settingPin.id}
+          onClose={() => setSettingPin(null)}
+          onSaved={async (member) => {
+            setSettingPin(null);
+            setNotice(`${member.name} has a new PIN. Tell them in person.`);
+            await requests.reload();
+          }}
+        />
+      )}
       {deciding && (
         <ConfirmDialog
-          title={`${NEXT_ACTIONS[deciding.request.status].find((a) => a.status === deciding.next)?.label} request`}
+          title={`${NEXT_ACTIONS.pending.concat(NEXT_ACTIONS.approved).find((a) => a.status === deciding.next)?.label} request`}
           message={`"${deciding.request.title}" from ${deciding.request.requestedBy} will be marked ${STATUS_LABELS[deciding.next].toLowerCase()}.`}
           confirmLabel={
-            NEXT_ACTIONS[deciding.request.status].find(
-              (a) => a.status === deciding.next,
-            )?.label ?? "Save"
+            NEXT_ACTIONS.pending
+              .concat(NEXT_ACTIONS.approved)
+              .find((a) => a.status === deciding.next)?.label ?? "Save"
           }
           withNote
           danger={deciding.next === "rejected"}
@@ -165,6 +190,11 @@ export default function RequestsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="font-medium">{r.title}</span>
+                    {r.kind === "pin_reset" && (
+                      <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                        PIN
+                      </span>
+                    )}
                     {r.details && (
                       <p className="mt-0.5 whitespace-pre-line text-muted">
                         {r.details}
@@ -179,7 +209,15 @@ export default function RequestsPage() {
                     <RequestStatusCell request={r} />
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {NEXT_ACTIONS[r.status].map((a) => (
+                    {r.kind === "pin_reset" && r.status === "pending" && (
+                      <button
+                        onClick={() => setSettingPin(r)}
+                        className="ml-4 font-medium text-emerald-700 hover:underline"
+                      >
+                        Set new PIN
+                      </button>
+                    )}
+                    {actions(r).map((a) => (
                       <button
                         key={a.status}
                         onClick={() =>

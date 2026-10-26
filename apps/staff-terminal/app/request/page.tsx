@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Notice } from "../components/action-modals";
+import ConfirmDialog from "../components/confirm-dialog";
 import { INPUT, PRIMARY_BUTTON } from "../components/form-styles";
 import RequestStatusCell from "../components/request-status";
 import {
@@ -27,6 +28,29 @@ export default function RequestPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [askingPin, setAskingPin] = useState(false);
+  const pinRequested = mine.data?.some(
+    (r) => r.kind === "pin_reset" && r.status === "pending",
+  );
+
+  const askForPin = async () => {
+    setAskingPin(false);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiFetch("/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "pin_reset" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not send request");
+      setNotice("PIN request sent. The admin will give you a new PIN.");
+      await mine.reload();
+    } catch (e) {
+      setError(describeError(e, "Could not send request"));
+    }
+  };
 
   const submit = async () => {
     setSaving(true);
@@ -83,6 +107,33 @@ export default function RequestPage() {
       </header>
 
       <main className="mx-auto max-w-4xl p-8">
+        {askingPin && (
+          <ConfirmDialog
+            title="Ask for a new PIN"
+            message="The admin will be asked to give you a new PIN. Your current PIN keeps working until they do."
+            confirmLabel="Send request"
+            onConfirm={askForPin}
+            onClose={() => setAskingPin(false)}
+          />
+        )}
+        {!isAdmin && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-5 py-3 text-sm">
+            <span className="text-muted">
+              {pinRequested
+                ? "Your PIN request is with the admin."
+                : "Need a new PIN? Ask the admin to change it."}
+            </span>
+            {!pinRequested && (
+              <button
+                type="button"
+                onClick={() => setAskingPin(true)}
+                className="font-medium text-brand-deep hover:underline"
+              >
+                Ask for a new PIN
+              </button>
+            )}
+          </div>
+        )}
         <form
           className="flex flex-col gap-3 rounded-lg bg-white p-5 shadow-sm"
           onSubmit={(e) => {

@@ -2,13 +2,20 @@
 
 import { useState } from "react";
 import type { Product } from "@pos/types";
-import { apiFetch, describeError } from "../lib/api";
+import {
+  apiFetch,
+  categoryList,
+  describeError,
+  fetchCatalog,
+  useLoad,
+} from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
 const EMPTY_FORM = {
   sku: "",
   barcode: "",
   name: "",
+  category: "",
   costPrice: "",
   price: "",
   quantity: "",
@@ -19,6 +26,7 @@ const FIELDS = [
   { key: "sku", label: "SKU", type: "text", required: true },
   { key: "barcode", label: "Barcode", type: "text", required: false },
   { key: "name", label: "Name", type: "text", required: true },
+  { key: "category", label: "Category", type: "text", required: false },
   { key: "costPrice", label: "Cost price", type: "number", required: false },
   { key: "price", label: "Selling price", type: "number", required: true },
   { key: "quantity", label: "Quantity", type: "number", required: true },
@@ -92,12 +100,16 @@ export default function AddProductForm({
   product,
   stock = {},
 }: Props) {
+  // Categories already in use, suggested in the category box.
+  const catalog = useLoad(fetchCatalog);
+  const categories = categoryList(catalog.data?.products ?? []);
   const [form, setForm] = useState(
     product
       ? {
           sku: product.sku,
           barcode: product.barcode ?? "",
           name: product.name,
+          category: product.category ?? "",
           costPrice: product.costPrice?.toString() ?? "",
           price: product.price.toString(),
           quantity: (stock[product.id] ?? 0).toString(),
@@ -160,6 +172,7 @@ export default function AddProductForm({
           body: JSON.stringify({
             sku: form.sku,
             name: form.name,
+            category: form.category.trim(),
             ...(form.imageUrl.trim() !== ""
               ? { imageUrl: form.imageUrl.trim() }
               : {}),
@@ -209,12 +222,18 @@ export default function AddProductForm({
         void submit();
       }}
     >
+      <datalist id="product-categories">
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       {FIELDS.filter((f) => !(hasOptions && PER_OPTION_FIELDS.has(f.key))).map(
         (field, index) => (
           <label
             key={field.key}
             className={`text-sm font-medium ${
               field.key === "name" ||
+              field.key === "category" ||
               field.key === "sku" ||
               field.key === "barcode"
                 ? "col-span-2"
@@ -246,8 +265,11 @@ export default function AddProductForm({
                   ? "https://res.cloudinary.com/…"
                   : field.key === "barcode"
                     ? "Scan or type the barcode"
-                    : undefined
+                    : field.key === "category"
+                      ? "e.g. Skincare"
+                      : undefined
               }
+              list={field.key === "category" ? "product-categories" : undefined}
               onKeyDown={field.key === "barcode" ? nextFieldOnEnter : undefined}
               name={field.key}
               value={form[field.key]}
