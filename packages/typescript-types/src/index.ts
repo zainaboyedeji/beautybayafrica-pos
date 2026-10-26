@@ -112,12 +112,21 @@ export interface StoreRequest {
   createdAt: string;
 }
 
+/** Who made a sale. */
+export interface Seller {
+  role: "admin" | "staff";
+  name: string;
+  staffId?: string;
+}
+
 export interface Order {
   id: string;
   items: OrderItem[];
   total: number;
   paymentMethod: PaymentMethod;
   customer: Customer;
+  /** Missing on sales made before sellers were recorded. */
+  soldBy?: Seller;
   createdAt: string;
 }
 
@@ -151,4 +160,21 @@ export interface ActivityEntry {
   actorName: string;
   action: ActivityAction;
   summary: string;
+}
+
+/** Someone who can log in (or could, for former staff), with a summary. */
+export interface UserSummary {
+  /** "admin" for the admin, otherwise the staff member's id. */
+  id: string;
+  name: string;
+  access: "admin" | "staff" | "former";
+  /** Job title, for staff. */
+  jobRole?: string;
+  /** When they were added, for current staff. */
+  createdAt?: string;
+  lastLogin?: string;
+  lastActivity?: string;
+  /** Sales they made since sellers were recorded. */
+  sales: number;
+  salesTotal: number;
 }

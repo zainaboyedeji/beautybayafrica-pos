@@ -24,8 +24,10 @@ import type {
   ProductVariant,
   RequestKind,
   RequestStatus,
+  Seller,
   StoreRequest,
   Supplier,
+  UserSummary,
 } from "@pos/types";
 
 const app = express();
@@ -193,6 +195,7 @@ type StaffRow = {
   job_role: string | null;
   salt: string;
   pin_hash: string;
+  created_at: Date;
 };
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
@@ -292,6 +295,13 @@ const logActivity = async (actor: Actor, action: ActivityAction, summary: string
     console.error("Could not save activity:", err);
   }
 };
+
+/**
+ * SQL that limits a query to one user's rows: "admin", or a staff id.
+ * `role` and `staffId` are the table's column names.
+ */
+const userFilter = (user: string, role: string, staffId: string, param: number) =>
+  user === "admin" ? `${role} = 'admin'` : `${staffId} = $${param}`;
 
 /** Logs an action by the logged-in user. */
 const logBy = (res: express.Response, action: ActivityAction, summary: string) =>
@@ -1083,7 +1093,9 @@ app.post("/customers", adminOnly, async (req, res) => {
   res.status(201).json(customer);
 });
 
-app.get("/orders", adminOnly, async (_req, res) => {
+// Every sale, or with ?user= ("admin" or a staff id) only that person's.
+app.get("/orders", adminOnly, async (req, res) => {
+  const user = String(req.query.user ?? "");
   const { rows } = await db.query<{
     id: string;
     total: number;
@@ -1091,6 +1103,9 @@ app.get("/orders", adminOnly, async (_req, res) => {
     customer_name: string;
     customer_phone: string;
     customer_email: string | null;
+    sold_by_role: Seller["role"] | null;
+    sold_by_name: string | null;
+    sold_by_staff_id: string | null;
     created_at: Date;
     items: OrderItem[];
   }>(
@@ -1099,7 +1114,9 @@ app.get("/orders", adminOnly, async (_req, res) => {
          'name', i.name, 'quantity', i.quantity,
          'unitPrice', i.unit_price, 'unitCost', i.unit_cost)) ORDER BY i.line) AS items
      FROM orders o JOIN order_items i ON i.order_id = o.id
+     ${user ? `WHERE ${userFilter(user, "o.sold_by_role", "o.sold_by_staff_id", 1)}` : ""}
      GROUP BY o.id ORDER BY o.created_at`,
+    user && user !== "admin" ? [user] : [],
   );
   res.json(
     rows.map(
@@ -1113,6 +1130,15 @@ app.get("/orders", adminOnly, async (_req, res) => {
           phone: row.customer_phone,
           email: row.customer_email,
         }),
+        ...(row.sold_by_role && row.sold_by_name
+          ? {
+              soldBy: {
+                role: row.sold_by_role,
+                name: row.sold_by_name,
+                ...(row.sold_by_staff_id ? { staffId: row.sold_by_staff_id } : {}),
+              },
+            }
+          : {}),
         createdAt: row.created_at.toISOString(),
       }),
     ),
@@ -1186,6 +1212,13 @@ app.post("/orders", anyone, async (req, res) => {
     }
   }
 
+  const session = sessionOf(res);
+  const soldBy: Seller = {
+    role: session.role === "admin" ? "admin" : "staff",
+    name: session.name,
+    ...(session.staffId ? { staffId: session.staffId } : {}),
+  };
+
   // Taking the stock and saving the sale happen together, so two tills
   // selling the last item at once can't both succeed.
   const order = await transaction(async (client) => {
@@ -1247,11 +1280,13 @@ app.post("/orders", anyone, async (req, res) => {
       total: Math.round(total * 100) / 100,
       paymentMethod: paymentMethod satisfies PaymentMethod,
       customer,
+      soldBy,
       createdAt: createdAt.toISOString(),
     };
     await client.query(
-      `INSERT INTO orders (id, total, payment_method, customer_name, customer_phone, customer_email, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO orders (id, total, payment_method, customer_name, customer_phone,
+         customer_email, created_at, sold_by_role, sold_by_name, sold_by_staff_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         order.id,
         order.total,
@@ -1260,6 +1295,9 @@ app.post("/orders", anyone, async (req, res) => {
         customer.phone,
         customer.email ?? null,
         createdAt,
+        soldBy.role,
+        soldBy.name,
+        soldBy.staffId ?? null,
       ],
     );
     for (const [line, item] of items.entries()) {
@@ -1690,9 +1728,11 @@ app.put("/requests/:id/status", adminOnly, async (req, res) => {
 });
 
 // The activity log, newest first. `days` limits it to recent days (0 for
-// all); at most the newest 5,000 entries are sent.
+// all) and `user` ("admin" or a staff id) to one person; at most the newest
+// 5,000 entries are sent.
 app.get("/activity", adminOnly, async (req, res) => {
   const days = Math.max(0, Number(req.query.days ?? 30) || 0);
+  const user = String(req.query.user ?? "");
   const { rows } = await db.query<{
     id: string;
     at: Date;
@@ -1702,9 +1742,10 @@ app.get("/activity", adminOnly, async (req, res) => {
     summary: string;
   }>(
     `SELECT id, at, actor_role, actor_name, action, summary FROM activity_log
-     WHERE $1 = 0 OR at > now() - make_interval(days => $1)
+     WHERE ($1 = 0 OR at > now() - make_interval(days => $1))
+       ${user ? `AND ${userFilter(user, "actor_role", "staff_id", 2)}` : ""}
      ORDER BY at DESC LIMIT 5000`,
-    [days],
+    user && user !== "admin" ? [days, user] : [days],
   );
   res.json(
     rows.map(
@@ -1718,6 +1759,74 @@ app.get("/activity", adminOnly, async (req, res) => {
       }),
     ),
   );
+});
+
+// Everyone who can log in, plus former staff still in the history, with
+// their last login and activity and the sales they made.
+app.get("/users", adminOnly, async (_req, res) => {
+  type Stats = { uid: string; name: string; last_login: Date | null; last_activity: Date };
+  type Sales = { uid: string; name: string; sales: number; total: number };
+  const [staff, activity, sales] = await Promise.all([
+    fetchStaff(),
+    db.query<Stats>(
+      `SELECT CASE WHEN actor_role = 'admin' THEN 'admin' ELSE staff_id END AS uid,
+         (array_agg(actor_name ORDER BY at DESC))[1] AS name,
+         max(at) FILTER (WHERE action = 'login') AS last_login,
+         max(at) AS last_activity
+       FROM activity_log WHERE actor_role = 'admin' OR staff_id IS NOT NULL
+       GROUP BY 1`,
+    ),
+    db.query<Sales>(
+      `SELECT CASE WHEN sold_by_role = 'admin' THEN 'admin' ELSE sold_by_staff_id END AS uid,
+         (array_agg(sold_by_name ORDER BY created_at DESC))[1] AS name,
+         count(*)::int AS sales, sum(total) AS total
+       FROM orders WHERE sold_by_role IS NOT NULL
+       GROUP BY 1`,
+    ),
+  ]);
+  const statsOf = new Map(activity.rows.map((r) => [r.uid, r]));
+  const salesOf = new Map(sales.rows.map((r) => [r.uid, r]));
+  const summary = (
+    id: string,
+    name: string,
+    access: UserSummary["access"],
+    extra: Partial<UserSummary> = {},
+  ): UserSummary => {
+    const stats = statsOf.get(id);
+    const sold = salesOf.get(id);
+    return {
+      id,
+      name,
+      access,
+      ...extra,
+      ...(stats?.last_login ? { lastLogin: stats.last_login.toISOString() } : {}),
+      ...(stats ? { lastActivity: stats.last_activity.toISOString() } : {}),
+      sales: sold?.sales ?? 0,
+      salesTotal: sold?.total ?? 0,
+    };
+  };
+  const current = new Set(staff.map((m) => m.id));
+  // Former staff are known only by the history they left behind.
+  const former = [...new Set([...statsOf.keys(), ...salesOf.keys()])].filter(
+    (uid) => uid !== "admin" && !current.has(uid),
+  );
+  const byName = (a: UserSummary, b: UserSummary) => a.name.localeCompare(b.name);
+  res.json([
+    summary("admin", "Admin", "admin"),
+    ...staff
+      .map((m) =>
+        summary(m.id, m.name, "staff", {
+          ...(m.job_role ? { jobRole: m.job_role } : {}),
+          createdAt: m.created_at.toISOString(),
+        }),
+      )
+      .sort(byName),
+    ...former
+      .map((uid) =>
+        summary(uid, statsOf.get(uid)?.name ?? salesOf.get(uid)?.name ?? "Unknown", "former"),
+      )
+      .sort(byName),
+  ]);
 });
 
 const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {

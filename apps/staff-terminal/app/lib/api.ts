@@ -11,6 +11,7 @@ import type {
   ProductVariant,
   StoreRequest,
   Supplier,
+  UserSummary,
 } from "@pos/types";
 import { getSession, logOut } from "./auth";
 
@@ -109,6 +110,19 @@ export async function fetchCatalog(): Promise<Catalog> {
   };
 }
 
+/** The sales one user ("admin" or a staff id) made. */
+export async function fetchUserOrders(user: string): Promise<Order[]> {
+  const res = await apiFetch(`/orders?user=${encodeURIComponent(user)}`);
+  if (!res.ok) throw new Error("Orders request failed");
+  return res.json();
+}
+
+export async function fetchUsers(): Promise<UserSummary[]> {
+  const res = await apiFetch("/users");
+  if (!res.ok) throw new Error("Users request failed");
+  return res.json();
+}
+
 export async function fetchOrders(): Promise<Order[]> {
   const res = await apiFetch("/orders");
   if (!res.ok) throw new Error("Orders request failed");
@@ -151,9 +165,17 @@ export async function fetchMyRequests(): Promise<StoreRequest[]> {
   return res.json();
 }
 
-/** The activity log for the last `days` days (0 for all). */
-export async function fetchActivity(days: number): Promise<ActivityEntry[]> {
-  const res = await apiFetch(`/activity?days=${days}`);
+/**
+ * The activity log for the last `days` days (0 for all), optionally for one
+ * user ("admin" or a staff id).
+ */
+export async function fetchActivity(
+  days: number,
+  user?: string,
+): Promise<ActivityEntry[]> {
+  const query = new URLSearchParams({ days: String(days) });
+  if (user) query.set("user", user);
+  const res = await apiFetch(`/activity?${query}`);
   if (!res.ok) throw new Error("Activity request failed");
   return res.json();
 }

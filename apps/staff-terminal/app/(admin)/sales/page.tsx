@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { Order } from "@pos/types";
 import ActionModals, {
@@ -36,6 +37,7 @@ export default function SalesPage() {
             order.customer.name,
             order.customer.phone,
             order.paymentMethod,
+            order.soldBy?.name,
             itemsText(order),
           ),
         )
@@ -89,6 +91,7 @@ export default function SalesPage() {
                 <th className="px-4 py-3">Phone</th>
                 <th className="px-4 py-3">Items</th>
                 <th className="px-4 py-3">Payment</th>
+                <th className="px-4 py-3">Sold by</th>
                 <th className="px-4 py-3 text-right">Total</th>
               </tr>
             </thead>
@@ -105,6 +108,22 @@ export default function SalesPage() {
                   <td className="px-4 py-3">{itemsText(order)}</td>
                   <td className="px-4 py-3 capitalize">
                     {order.paymentMethod}
+                  </td>
+                  <td className="px-4 py-3">
+                    {order.soldBy ? (
+                      <Link
+                        href={`/user?id=${encodeURIComponent(
+                          order.soldBy.role === "admin"
+                            ? "admin"
+                            : (order.soldBy.staffId ?? ""),
+                        )}`}
+                        className="hover:text-brand-deep hover:underline"
+                      >
+                        {order.soldBy.name}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-medium">
                     {money.format(order.total)}

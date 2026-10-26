@@ -15,11 +15,17 @@ const LINKS = [
   { href: "/expenses", label: "Expenses" },
   { href: "/requests", label: "Requests" },
   { href: "/staff", label: "Staff" },
+  { href: "/users", label: "Users" },
   { href: "/activity", label: "Activity" },
 ];
 
+// A user's history page belongs under Users.
+const SECTION_OF: Record<string, string> = { "/user": "/users" };
+
 export default function Sidebar() {
   const pathname = usePathname().replace(/\/$/, "") || "/";
+  const isActive = (href: string) =>
+    (SECTION_OF[pathname] ?? pathname) === href;
   const requests = useLoad(fetchRequests);
   const { reload } = requests;
   // Check for new requests whenever the admin moves to another page.
@@ -37,9 +43,9 @@ export default function Sidebar() {
           <Link
             key={link.href}
             href={link.href}
-            aria-current={pathname === link.href ? "page" : undefined}
+            aria-current={isActive(link.href) ? "page" : undefined}
             className={`flex items-center rounded-md px-3 py-2 text-sm font-medium ${
-              pathname === link.href
+              isActive(link.href)
                 ? "bg-brand text-ink"
                 : "text-zinc-300 hover:bg-zinc-800"
             }`}
@@ -49,7 +55,7 @@ export default function Sidebar() {
               <span
                 aria-label={`${pending} pending`}
                 className={`ml-auto rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  pathname === link.href
+                  isActive(link.href)
                     ? "bg-white text-brand-deep"
                     : "bg-brand text-ink"
                 }`}
