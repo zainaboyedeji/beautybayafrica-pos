@@ -24,6 +24,7 @@ import { LoadError, Loading } from "../../lib/status";
 
 const CATEGORIES = [
   "Stock purchase",
+  "Equipment & store items",
   "Rent",
   "Salaries",
   "Electricity & fuel",

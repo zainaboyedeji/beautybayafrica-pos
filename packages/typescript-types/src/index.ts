@@ -150,7 +150,10 @@ export type ActivityAction =
   | "expense_deleted"
   | "request_made"
   | "pin_requested"
-  | "request_decided";
+  | "request_decided"
+  | "store_item_added"
+  | "store_item_updated"
+  | "store_item_removed";
 
 export interface ActivityEntry {
   id: string;
@@ -177,4 +180,40 @@ export interface UserSummary {
   /** Sales they made since sellers were recorded. */
   sales: number;
   salesTotal: number;
+}
+
+export type StoreItemStatus =
+  | "in_use"
+  | "in_storage"
+  | "under_repair"
+  | "lost"
+  | "disposed";
+
+/** Some of a store item handed to a person, or kept at a place. */
+export interface StoreItemAssignment {
+  assignedTo: string;
+  quantity: number;
+}
+
+/** Something the shop owns for its own use, such as a phone or uniform. */
+export interface StoreItem {
+  id: string;
+  /** The shop's own code for it, e.g. BBA-0007. */
+  tag: string;
+  name: string;
+  category: string;
+  quantity: number;
+  /** What one cost. */
+  unitCost?: number;
+  /** The day it was bought, as YYYY-MM-DD. */
+  boughtOn?: string;
+  supplierId?: string;
+  /** Saved with the item, so it stays readable if the supplier is removed. */
+  supplierName?: string;
+  serialNumber?: string;
+  /** Who has how many; the rest of `quantity` is still with the store. */
+  assignments: StoreItemAssignment[];
+  status: StoreItemStatus;
+  notes?: string;
+  createdAt: string;
 }

@@ -9,6 +9,7 @@ import type {
   Order,
   Product,
   ProductVariant,
+  StoreItem,
   StoreRequest,
   Supplier,
   UserSummary,
@@ -144,6 +145,12 @@ export async function fetchStaff(): Promise<StaffMember[]> {
 export async function fetchSuppliers(): Promise<Supplier[]> {
   const res = await apiFetch("/suppliers");
   if (!res.ok) throw new Error("Suppliers request failed");
+  return res.json();
+}
+
+export async function fetchStoreItems(): Promise<StoreItem[]> {
+  const res = await apiFetch("/store-items");
+  if (!res.ok) throw new Error("Store items request failed");
   return res.json();
 }
 

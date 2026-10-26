@@ -183,31 +183,36 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
       <p className="mt-4 text-sm font-medium">Items</p>
       {lines.map((line, index) => (
         <div key={index} className="mt-2 flex gap-3">
-          <select
-            required
-            aria-label={`Product ${index + 1}`}
-            value={line.key}
-            onChange={(e) => updateLine(index, { key: e.target.value })}
-            className={`${INPUT} mt-0 min-w-0 flex-1`}
-          >
-            <option value="">Choose a product…</option>
-            {items.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.name} — {money.format(s.price)} ({stock[s.key] ?? 0} in
-                stock)
-              </option>
-            ))}
-          </select>
-          <input
-            required
-            type="number"
-            min={1}
-            step={1}
-            aria-label={`Quantity ${index + 1}`}
-            value={line.quantity}
-            onChange={(e) => updateLine(index, { quantity: e.target.value })}
-            className={`${INPUT} mt-0 w-24`}
-          />
+          {/* Widths sit on wrappers: INPUT's w-full would beat them otherwise. */}
+          <div className="min-w-0 flex-1">
+            <select
+              required
+              aria-label={`Product ${index + 1}`}
+              value={line.key}
+              onChange={(e) => updateLine(index, { key: e.target.value })}
+              className={`${INPUT} mt-0`}
+            >
+              <option value="">Choose a product…</option>
+              {items.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.name} — {money.format(s.price)} ({stock[s.key] ?? 0} in
+                  stock)
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-24 shrink-0">
+            <input
+              required
+              type="number"
+              min={1}
+              step={1}
+              aria-label={`Quantity ${index + 1}`}
+              value={line.quantity}
+              onChange={(e) => updateLine(index, { quantity: e.target.value })}
+              className={`${INPUT} mt-0`}
+            />
+          </div>
           <button
             type="button"
             disabled={lines.length === 1}

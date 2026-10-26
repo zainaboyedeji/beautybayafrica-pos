@@ -103,6 +103,9 @@ services:
         source: /users
         destination: /users.html
       - type: rewrite
+        source: /store-items
+        destination: /store-items.html
+      - type: rewrite
         source: /user
         destination: /user.html
     envVars:

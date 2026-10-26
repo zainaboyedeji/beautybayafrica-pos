@@ -27,6 +27,9 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   request_made: "Request made",
   pin_requested: "PIN request",
   request_decided: "Request decided",
+  store_item_added: "Store item added",
+  store_item_updated: "Store item edited",
+  store_item_removed: "Store item removed",
 };
 
 const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
@@ -53,6 +56,10 @@ const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
     label: "Requests",
     actions: ["request_made", "pin_requested", "request_decided"],
   },
+  storeItems: {
+    label: "Store items",
+    actions: ["store_item_added", "store_item_updated", "store_item_removed"],
+  },
 };
 
 // Failed logins and removals stand out; everything else is calm.
@@ -61,6 +68,7 @@ const ACTION_STYLES: Partial<Record<ActivityAction, string>> = {
   staff_removed: "bg-red-100 text-red-800",
   supplier_removed: "bg-red-100 text-red-800",
   expense_deleted: "bg-red-100 text-red-800",
+  store_item_removed: "bg-red-100 text-red-800",
   sale: "bg-emerald-100 text-emerald-800",
   login: "bg-surface-alt text-muted",
 };

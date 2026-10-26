@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/customers", label: "Customers" },
   { href: "/suppliers", label: "Suppliers" },
   { href: "/expenses", label: "Expenses" },
+  { href: "/store-items", label: "Store items" },
   { href: "/requests", label: "Requests" },
   { href: "/staff", label: "Staff" },
   { href: "/users", label: "Users" },
