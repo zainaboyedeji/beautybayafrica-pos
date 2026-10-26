@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
   Customer,
+  Expense,
   Inventory,
   Order,
   Product,
   ProductVariant,
+  StoreRequest,
+  Supplier,
 } from "@pos/types";
 import { getSession, logOut } from "./auth";
 
@@ -24,7 +27,7 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   const token = getSession()?.token;
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });
-  // The login has expired or the cashier was removed.
+  // The login has expired or the staff member was removed.
   if (res.status === 401) {
     logOut();
     throw new Error("Please log in again");
@@ -32,7 +35,8 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   return res;
 }
 
-export type Cashier = { id: string; name: string };
+/** Someone who logs in with a PIN, with their job title. */
+export type StaffMember = { id: string; name: string; role?: string };
 
 /**
  * Stock by product id, and by option id for products with options (their
@@ -110,9 +114,33 @@ export async function fetchCustomers(): Promise<Customer[]> {
   return res.json();
 }
 
-export async function fetchCashiers(): Promise<Cashier[]> {
-  const res = await apiFetch("/cashiers");
-  if (!res.ok) throw new Error("Cashiers request failed");
+export async function fetchStaff(): Promise<StaffMember[]> {
+  const res = await apiFetch("/staff");
+  if (!res.ok) throw new Error("Staff request failed");
+  return res.json();
+}
+
+export async function fetchSuppliers(): Promise<Supplier[]> {
+  const res = await apiFetch("/suppliers");
+  if (!res.ok) throw new Error("Suppliers request failed");
+  return res.json();
+}
+
+export async function fetchExpenses(): Promise<Expense[]> {
+  const res = await apiFetch("/expenses");
+  if (!res.ok) throw new Error("Expenses request failed");
+  return res.json();
+}
+
+export async function fetchRequests(): Promise<StoreRequest[]> {
+  const res = await apiFetch("/requests");
+  if (!res.ok) throw new Error("Requests request failed");
+  return res.json();
+}
+
+export async function fetchMyRequests(): Promise<StoreRequest[]> {
+  const res = await apiFetch("/requests/mine");
+  if (!res.ok) throw new Error("Requests request failed");
   return res.json();
 }
 
@@ -168,7 +196,10 @@ export function summariseCustomers(
         ...customer,
         orders: theirs.length,
         totalSpent: theirs.reduce((sum, o) => sum + o.total, 0),
-        lastPurchase: theirs.map((o) => o.createdAt).sort().at(-1),
+        lastPurchase: theirs
+          .map((o) => o.createdAt)
+          .sort()
+          .at(-1),
       };
     })
     .sort((a, b) => (b.lastPurchase ?? "").localeCompare(a.lastPurchase ?? ""));

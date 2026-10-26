@@ -9,7 +9,10 @@ const LINKS = [
   { href: "/inventory", label: "Inventory" },
   { href: "/sales", label: "Sales" },
   { href: "/customers", label: "Customers" },
-  { href: "/cashiers", label: "Cashiers" },
+  { href: "/suppliers", label: "Suppliers" },
+  { href: "/expenses", label: "Expenses" },
+  { href: "/requests", label: "Requests" },
+  { href: "/staff", label: "Staff" },
 ];
 
 export default function Sidebar() {

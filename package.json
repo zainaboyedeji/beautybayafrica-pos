@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev --filter=cashier-terminal --filter=sync-api",
+    "dev": "turbo run dev --filter=staff-terminal --filter=sync-api",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "desktop": "pnpm --filter cashier-terminal tauri dev"
+    "desktop": "pnpm --filter staff-terminal tauri dev"
   },
   "engines": {
     "node": ">=20"

@@ -6,10 +6,10 @@ import { API_URL, describeError } from "../lib/api";
 import { saveSession, type Session } from "../lib/auth";
 import FeatureShowcase from "./feature-showcase";
 
-type Mode = "cashier" | "admin";
+type Mode = "staff" | "admin";
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<Mode>("cashier");
+  const [mode, setMode] = useState<Mode>("staff");
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,7 +59,7 @@ export default function LoginPage() {
           </p>
           <h1 className="mt-4 text-2xl font-semibold">Log in</h1>
           <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-surface-alt p-1 text-sm font-medium">
-            {(["cashier", "admin"] as const).map((m) => (
+            {(["staff", "admin"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -73,19 +73,19 @@ export default function LoginPage() {
                   mode === m ? "bg-white shadow-sm" : "text-muted"
                 }`}
               >
-                {m === "cashier" ? "Cashier" : "Admin"}
+                {m === "staff" ? "Staff" : "Admin"}
               </button>
             ))}
           </div>
           <label className="mt-5 block text-sm font-medium">
-            {mode === "cashier" ? "PIN" : "Admin password"}
+            {mode === "staff" ? "PIN" : "Admin password"}
             <div className="relative">
               <input
                 key={mode}
                 autoFocus
                 required
                 type={showSecret ? "text" : "password"}
-                inputMode={mode === "cashier" ? "numeric" : undefined}
+                inputMode={mode === "staff" ? "numeric" : undefined}
                 autoComplete={mode === "admin" ? "current-password" : "off"}
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}

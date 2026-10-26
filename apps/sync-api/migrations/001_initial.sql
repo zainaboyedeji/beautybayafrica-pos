@@ -47,7 +47,7 @@ CREATE TABLE order_items (
   PRIMARY KEY (order_id, line)
 );
 
-CREATE TABLE cashiers (
+CREATE TABLE staff (
   id text PRIMARY KEY,
   name text NOT NULL,
   salt text NOT NULL,

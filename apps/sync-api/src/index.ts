@@ -12,12 +12,17 @@ import {
 import type {
   CloudinaryUrl,
   Customer,
+  Expense,
+  ExpensePaymentMethod,
   Inventory,
   Order,
   OrderItem,
   PaymentMethod,
   Product,
   ProductVariant,
+  RequestStatus,
+  StoreRequest,
+  Supplier,
 } from "@pos/types";
 
 const app = express();
@@ -171,11 +176,18 @@ const parseNumber = (value: string) => {
 
 // --- Login -----------------------------------------------------------------
 
-// The admin logs in with ADMIN_PASSWORD; cashiers log in with a PIN the admin
-// gives them. Cashiers can only see products and make sales.
-type Role = "admin" | "cashier";
-type Session = { role: Role; name: string; cashierId?: string; exp: number };
-type Cashier = { id: string; name: string; salt: string; pin_hash: string };
+// The admin logs in with ADMIN_PASSWORD; staff log in with a PIN the admin
+// gives them. Staff can only use the till and make requests.
+type Role = "admin" | "staff";
+type Session = { role: Role; name: string; staffId?: string; exp: number };
+// `job_role` is a job title (Sales attendant, Store manager…) for the record only.
+type StaffRow = {
+  id: string;
+  name: string;
+  job_role: string | null;
+  salt: string;
+  pin_hash: string;
+};
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 if (!ADMIN_PASSWORD) {
@@ -186,16 +198,16 @@ const SESSION_SECRET =
   process.env.SESSION_SECRET ?? randomBytes(32).toString("hex");
 const SESSION_HOURS = 12;
 
-const fetchCashiers = async () =>
-  (await db.query<Cashier>("SELECT * FROM cashiers ORDER BY created_at")).rows;
+const fetchStaff = async () =>
+  (await db.query<StaffRow>("SELECT * FROM staff ORDER BY created_at")).rows;
 
 const hashPin = (pin: string, salt: string) =>
   scryptSync(pin, salt, 32).toString("hex");
 
-const pinMatches = (cashier: Cashier, pin: string) =>
+const pinMatches = (member: StaffRow, pin: string) =>
   timingSafeEqual(
-    Buffer.from(hashPin(pin, cashier.salt), "hex"),
-    Buffer.from(cashier.pin_hash, "hex"),
+    Buffer.from(hashPin(pin, member.salt), "hex"),
+    Buffer.from(member.pin_hash, "hex"),
   );
 
 // Compares hashes so the check takes the same time whatever was typed.
@@ -227,10 +239,10 @@ const readToken = async (header: string | undefined): Promise<Session | null> =>
     Buffer.from(payload, "base64url").toString("utf8"),
   );
   if (session.exp < Date.now()) return null;
-  // A removed cashier is logged out straight away.
-  if (session.role === "cashier") {
-    const { rowCount } = await db.query("SELECT 1 FROM cashiers WHERE id = $1", [
-      session.cashierId,
+  // A removed staff member is logged out straight away.
+  if (session.role === "staff") {
+    const { rowCount } = await db.query("SELECT 1 FROM staff WHERE id = $1", [
+      session.staffId,
     ]);
     if (!rowCount) return null;
   }
@@ -249,10 +261,14 @@ const requireRole =
       res.status(403).json({ error: "Only the admin can do this" });
       return;
     }
+    res.locals.session = session;
     next();
   };
 
-const anyone = requireRole("admin", "cashier");
+/** The logged-in user, for handlers behind requireRole. */
+const sessionOf = (res: express.Response) => res.locals.session as Session;
+
+const anyone = requireRole("admin", "staff");
 const adminOnly = requireRole("admin");
 
 // PINs are short, so lock a device out after too many wrong attempts.
@@ -260,7 +276,7 @@ const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_MINUTES = 15;
 const failedLogins = new Map<string, { count: number; until: number }>();
 
-// The cashier terminal runs on another origin (localhost:3000 / tauri://localhost).
+// The till app runs on another origin (localhost:3000 / tauri://localhost).
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -366,9 +382,9 @@ app.post("/auth/login", async (req, res) => {
   if (password && passwordMatches(password)) {
     session = { role: "admin", name: "Admin" };
   } else if (pin) {
-    const cashier = (await fetchCashiers()).find((c) => pinMatches(c, pin));
-    if (cashier)
-      session = { role: "cashier", name: cashier.name, cashierId: cashier.id };
+    const member = (await fetchStaff()).find((m) => pinMatches(m, pin));
+    if (member)
+      session = { role: "staff", name: member.name, staffId: member.id };
   }
 
   if (!session) {
@@ -386,41 +402,69 @@ app.post("/auth/login", async (req, res) => {
   res.json({ token: createToken(session), role: session.role, name: session.name });
 });
 
-app.get("/cashiers", adminOnly, async (_req, res) => {
-  res.json((await fetchCashiers()).map(({ id, name }) => ({ id, name })));
+app.get("/staff", adminOnly, async (_req, res) => {
+  res.json(
+    (await fetchStaff()).map(({ id, name, job_role }) => ({
+      id,
+      name,
+      ...(job_role !== null ? { role: job_role } : {}),
+    })),
+  );
 });
 
-app.post("/cashiers", adminOnly, async (req, res) => {
+app.post("/staff", adminOnly, async (req, res) => {
   const name = String(req.body?.name ?? "").trim();
+  const role = String(req.body?.role ?? "").trim();
   const pin = String(req.body?.pin ?? "").trim();
-  if (!name) {
-    res.status(400).json({ error: "Cashier name is required" });
+  if (!name || !role) {
+    res.status(400).json({ error: "Name and role are required" });
     return;
   }
   if (!/^\d{4,8}$/.test(pin)) {
     res.status(400).json({ error: "PIN must be 4 to 8 digits" });
     return;
   }
-  // Cashiers log in with the PIN alone, so each one must be different.
-  if ((await fetchCashiers()).some((c) => pinMatches(c, pin))) {
-    res.status(409).json({ error: "Another cashier already uses that PIN" });
+  // Staff log in with the PIN alone, so each one must be different.
+  if ((await fetchStaff()).some((m) => pinMatches(m, pin))) {
+    res.status(409).json({ error: "Another staff member already uses that PIN" });
     return;
   }
   const salt = randomBytes(16).toString("hex");
   const id = randomUUID();
   await db.query(
-    "INSERT INTO cashiers (id, name, salt, pin_hash) VALUES ($1, $2, $3, $4)",
-    [id, name, salt, hashPin(pin, salt)],
+    `INSERT INTO staff (id, name, job_role, salt, pin_hash)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, name, role, salt, hashPin(pin, salt)],
   );
-  res.status(201).json({ id, name });
+  res.status(201).json({ id, name, role });
 });
 
-app.delete("/cashiers/:id", adminOnly, async (req, res) => {
-  const { rowCount } = await db.query("DELETE FROM cashiers WHERE id = $1", [
+// Change a staff member's name or role. Their PIN stays the same; a new name
+// shows from their next login.
+app.put("/staff/:id", adminOnly, async (req, res) => {
+  const name = String(req.body?.name ?? "").trim();
+  const role = String(req.body?.role ?? "").trim();
+  if (!name || !role) {
+    res.status(400).json({ error: "Name and role are required" });
+    return;
+  }
+  const { rowCount } = await db.query(
+    "UPDATE staff SET name = $2, job_role = $3 WHERE id = $1",
+    [req.params.id, name, role],
+  );
+  if (!rowCount) {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+  res.json({ id: req.params.id, name, role });
+});
+
+app.delete("/staff/:id", adminOnly, async (req, res) => {
+  const { rowCount } = await db.query("DELETE FROM staff WHERE id = $1", [
     req.params.id,
   ]);
   if (!rowCount) {
-    res.status(404).json({ error: "Cashier not found" });
+    res.status(404).json({ error: "Staff member not found" });
     return;
   }
   res.sendStatus(204);
@@ -897,7 +941,7 @@ app.get("/customers", adminOnly, async (_req, res) => {
   res.json(rows.map(toCustomer));
 });
 
-// Cashiers can't list customers, but at checkout they may check whether a
+// Staff can't list customers, but at checkout they may check whether a
 // phone number is already saved, so they can confirm it's the same person.
 app.get("/customers/lookup", anyone, async (req, res) => {
   const phone = String(req.query.phone ?? "").trim();
@@ -1135,6 +1179,302 @@ app.post("/orders", anyone, async (req, res) => {
     return order;
   });
   res.status(201).json(order);
+});
+
+// --- Suppliers, expenses and store requests -------------------------------
+
+/** Trimmed text from a request body, or null when left empty. */
+const optionalText = (value: unknown) => String(value ?? "").trim() || null;
+
+type SupplierRow = {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: Date;
+};
+
+const toSupplier = (row: SupplierRow): Supplier => ({
+  id: row.id,
+  name: row.name,
+  ...(row.contact_person !== null ? { contactPerson: row.contact_person } : {}),
+  ...(row.phone !== null ? { phone: row.phone } : {}),
+  ...(row.email !== null ? { email: row.email } : {}),
+  ...(row.address !== null ? { address: row.address } : {}),
+  ...(row.notes !== null ? { notes: row.notes } : {}),
+  createdAt: row.created_at.toISOString(),
+});
+
+const supplierFields = (body: unknown) => {
+  const b = (body ?? {}) as Record<string, unknown>;
+  return [
+    String(b.name ?? "").trim(),
+    optionalText(b.contactPerson),
+    optionalText(b.phone),
+    optionalText(b.email),
+    optionalText(b.address),
+    optionalText(b.notes),
+  ] as const;
+};
+
+app.get("/suppliers", adminOnly, async (_req, res) => {
+  const { rows } = await db.query<SupplierRow>(
+    "SELECT * FROM suppliers ORDER BY lower(name)",
+  );
+  res.json(rows.map(toSupplier));
+});
+
+app.post("/suppliers", adminOnly, async (req, res) => {
+  const fields = supplierFields(req.body);
+  if (!fields[0]) {
+    res.status(400).json({ error: "Supplier name is required" });
+    return;
+  }
+  const { rows } = await db.query<SupplierRow>(
+    `INSERT INTO suppliers (id, name, contact_person, phone, email, address, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [randomUUID(), ...fields],
+  );
+  res.status(201).json(toSupplier(rows[0]));
+});
+
+app.put("/suppliers/:id", adminOnly, async (req, res) => {
+  const fields = supplierFields(req.body);
+  if (!fields[0]) {
+    res.status(400).json({ error: "Supplier name is required" });
+    return;
+  }
+  const { rows } = await db.query<SupplierRow>(
+    `UPDATE suppliers SET name = $2, contact_person = $3, phone = $4,
+       email = $5, address = $6, notes = $7
+     WHERE id = $1 RETURNING *`,
+    [req.params.id, ...fields],
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: "Supplier not found" });
+    return;
+  }
+  res.json(toSupplier(rows[0]));
+});
+
+app.delete("/suppliers/:id", adminOnly, async (req, res) => {
+  const { rowCount } = await db.query("DELETE FROM suppliers WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!rowCount) {
+    res.status(404).json({ error: "Supplier not found" });
+    return;
+  }
+  res.sendStatus(204);
+});
+
+type ExpenseRow = {
+  id: string;
+  spent_on: string;
+  description: string;
+  category: string;
+  amount: number;
+  payment_method: ExpensePaymentMethod;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  notes: string | null;
+  created_at: Date;
+};
+
+const toExpense = (row: ExpenseRow): Expense => ({
+  id: row.id,
+  spentOn: row.spent_on,
+  description: row.description,
+  category: row.category,
+  amount: row.amount,
+  paymentMethod: row.payment_method,
+  ...(row.supplier_id !== null ? { supplierId: row.supplier_id } : {}),
+  ...(row.supplier_name !== null ? { supplierName: row.supplier_name } : {}),
+  ...(row.notes !== null ? { notes: row.notes } : {}),
+  createdAt: row.created_at.toISOString(),
+});
+
+const EXPENSE_PAYMENT_METHODS = ["cash", "transfer", "card"];
+
+app.get("/expenses", adminOnly, async (_req, res) => {
+  const { rows } = await db.query<ExpenseRow>(
+    "SELECT * FROM expenses ORDER BY spent_on DESC, created_at DESC",
+  );
+  res.json(rows.map(toExpense));
+});
+
+app.post("/expenses", adminOnly, async (req, res) => {
+  const spentOn = String(req.body?.spentOn ?? "");
+  const description = String(req.body?.description ?? "").trim();
+  const category = String(req.body?.category ?? "").trim();
+  const amount = Number(req.body?.amount);
+  const paymentMethod = String(req.body?.paymentMethod ?? "");
+  const supplierId = optionalText(req.body?.supplierId);
+  const day = new Date(`${spentOn}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(spentOn) || Number.isNaN(day.getTime())) {
+    res.status(400).json({ error: "Choose the date the money was spent" });
+    return;
+  }
+  if (!description || !category) {
+    res.status(400).json({ error: "Description and category are required" });
+    return;
+  }
+  if (!(amount > 0)) {
+    res.status(400).json({ error: "Amount must be more than 0" });
+    return;
+  }
+  if (!EXPENSE_PAYMENT_METHODS.includes(paymentMethod)) {
+    res.status(400).json({ error: "Payment method must be cash, transfer or card" });
+    return;
+  }
+  let supplierName: string | null = null;
+  if (supplierId) {
+    const found = await db.query<{ name: string }>(
+      "SELECT name FROM suppliers WHERE id = $1",
+      [supplierId],
+    );
+    if (!found.rows[0]) {
+      res.status(400).json({ error: "Supplier not found" });
+      return;
+    }
+    supplierName = found.rows[0].name;
+  }
+  const { rows } = await db.query<ExpenseRow>(
+    `INSERT INTO expenses (id, spent_on, description, category, amount,
+       payment_method, supplier_id, supplier_name, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [
+      randomUUID(),
+      spentOn,
+      description,
+      category,
+      Math.round(amount * 100) / 100,
+      paymentMethod,
+      supplierId,
+      supplierName,
+      optionalText(req.body?.notes),
+    ],
+  );
+  res.status(201).json(toExpense(rows[0]));
+});
+
+app.delete("/expenses/:id", adminOnly, async (req, res) => {
+  const { rowCount } = await db.query("DELETE FROM expenses WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!rowCount) {
+    res.status(404).json({ error: "Expense not found" });
+    return;
+  }
+  res.sendStatus(204);
+});
+
+type StoreRequestRow = {
+  id: string;
+  title: string;
+  details: string | null;
+  requested_by: string;
+  amount: number | null;
+  status: RequestStatus;
+  decision_note: string | null;
+  decided_at: Date | null;
+  created_at: Date;
+};
+
+const toStoreRequest = (row: StoreRequestRow): StoreRequest => ({
+  id: row.id,
+  title: row.title,
+  ...(row.details !== null ? { details: row.details } : {}),
+  requestedBy: row.requested_by,
+  ...(row.amount !== null ? { amount: row.amount } : {}),
+  status: row.status,
+  ...(row.decision_note !== null ? { decisionNote: row.decision_note } : {}),
+  ...(row.decided_at !== null ? { decidedAt: row.decided_at.toISOString() } : {}),
+  createdAt: row.created_at.toISOString(),
+});
+
+const REQUEST_STATUSES = ["pending", "approved", "rejected", "done"];
+
+// Every request, for the admin to approve or reject.
+app.get("/requests", adminOnly, async (_req, res) => {
+  const { rows } = await db.query<StoreRequestRow>(
+    "SELECT * FROM store_requests ORDER BY created_at DESC",
+  );
+  res.json(rows.map(toStoreRequest));
+});
+
+// The requests the logged-in staff member made (or, for the admin, the admin's).
+app.get("/requests/mine", anyone, async (_req, res) => {
+  const { staffId } = sessionOf(res);
+  const { rows } = await db.query<StoreRequestRow>(
+    `SELECT * FROM store_requests
+     WHERE requested_by_staff_id IS NOT DISTINCT FROM $1
+     ORDER BY created_at DESC`,
+    [staffId ?? null],
+  );
+  res.json(rows.map(toStoreRequest));
+});
+
+// Anyone can make a request. A staff member's is saved under their own name; the
+// admin may record one on someone else's behalf.
+app.post("/requests", anyone, async (req, res) => {
+  const session = sessionOf(res);
+  const title = String(req.body?.title ?? "").trim();
+  const requestedBy =
+    session.role === "staff"
+      ? session.name
+      : String(req.body?.requestedBy ?? "").trim() || session.name;
+  const rawAmount = req.body?.amount;
+  const amount =
+    rawAmount === undefined || rawAmount === null || rawAmount === ""
+      ? null
+      : Number(rawAmount);
+  if (!title || !requestedBy) {
+    res.status(400).json({ error: "Request and who made it are required" });
+    return;
+  }
+  if (amount !== null && !(amount >= 0)) {
+    res.status(400).json({ error: "Amount must be a number" });
+    return;
+  }
+  const { rows } = await db.query<StoreRequestRow>(
+    `INSERT INTO store_requests (id, title, details, requested_by,
+       requested_by_staff_id, amount)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [
+      randomUUID(),
+      title,
+      optionalText(req.body?.details),
+      requestedBy,
+      session.staffId ?? null,
+      amount === null ? null : Math.round(amount * 100) / 100,
+    ],
+  );
+  res.status(201).json(toStoreRequest(rows[0]));
+});
+
+// Approve, reject or mark a request done, with an optional note.
+app.put("/requests/:id/status", adminOnly, async (req, res) => {
+  const status = String(req.body?.status ?? "");
+  if (!REQUEST_STATUSES.includes(status)) {
+    res.status(400).json({ error: "Unknown request status" });
+    return;
+  }
+  const { rows } = await db.query<StoreRequestRow>(
+    `UPDATE store_requests SET status = $2,
+       decision_note = COALESCE($3, decision_note),
+       decided_at = CASE WHEN $2 = 'pending' THEN NULL ELSE now() END
+     WHERE id = $1 RETURNING *`,
+    [req.params.id, status, optionalText(req.body?.note)],
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: "Request not found" });
+    return;
+  }
+  res.json(toStoreRequest(rows[0]));
 });
 
 const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {

@@ -28,7 +28,7 @@ const EMPTY_CUSTOMER: Customer = { name: "", phone: "", email: "" };
 
 type CheckoutStep = "payment" | "customer";
 
-export default function CashierTerminal() {
+export default function Till() {
   // RequireLogin only renders this page once someone is logged in.
   const session = getSession();
   const [products, setProducts] = useState<Product[]>([]);
@@ -49,9 +49,9 @@ export default function CashierTerminal() {
   const [customer, setCustomer] = useState<Customer>(EMPTY_CUSTOMER);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   // A saved customer with the phone number typed in, waiting for the
-  // cashier to say whether it's the same person.
+  // staff member to say whether it's the same person.
   const [existing, setExisting] = useState<Customer | null>(null);
-  // The phone number already checked, so the cashier is asked only once.
+  // The phone number already checked, so they are asked only once.
   const [checkedPhone, setCheckedPhone] = useState<string | null>(null);
 
   const load = useCallback(
@@ -199,6 +199,12 @@ export default function CashierTerminal() {
             ← Back office
           </Link>
         )}
+        <Link
+          href="/request"
+          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
+        >
+          Requests
+        </Link>
         <input
           value={search}
           autoFocus

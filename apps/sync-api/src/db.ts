@@ -4,6 +4,9 @@ import pg from "pg";
 // Postgres sends NUMERIC (prices) as text to avoid losing precision. Prices
 // are stored with two decimals, so plain numbers are safe here.
 pg.types.setTypeParser(pg.types.builtins.NUMERIC, Number);
+// Keep calendar dates (e.g. when an expense was paid) as "YYYY-MM-DD" text,
+// so no time zone can move them to the day before.
+pg.types.setTypeParser(pg.types.builtins.DATE, (value) => value);
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

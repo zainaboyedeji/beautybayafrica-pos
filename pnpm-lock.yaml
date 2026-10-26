@@ -180,7 +180,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  apps/cashier-terminal:
+  apps/staff-terminal:
     dependencies:
       '@pos/types':
         specifier: workspace:*

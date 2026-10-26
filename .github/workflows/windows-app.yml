@@ -30,18 +30,18 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: apps/cashier-terminal/src-tauri -> target
+          workspaces: apps/staff-terminal/src-tauri -> target
 
       # Only the Tauri command-line tool is needed: the app opens the live
       # website, so no screens are built into it.
-      - run: pnpm install --frozen-lockfile --filter cashier-terminal
+      - run: pnpm install --frozen-lockfile --filter staff-terminal
 
       # Builds the .exe and .msi.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: apps/cashier-terminal
+          projectPath: apps/staff-terminal
           tauriScript: pnpm tauri
           tagName: app-v__VERSION__
           releaseName: BeautyBay Africa POS v__VERSION__

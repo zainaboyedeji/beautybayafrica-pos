@@ -72,7 +72,7 @@ const brandOf = (item: StoreItem) =>
       "",
   );
 
-/** Cashiers search by brand, so put it in front unless the name has it. */
+/** Staff search by brand, so put it in front unless the name has it. */
 const productName = (item: StoreItem) => {
   const name = decode(item.name);
   const brand = brandOf(item);

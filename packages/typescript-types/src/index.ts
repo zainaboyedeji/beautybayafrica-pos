@@ -60,6 +60,50 @@ export interface Customer {
   email?: string;
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  /** What they supply, account details, terms and so on. */
+  notes?: string;
+  createdAt: string;
+}
+
+export type ExpensePaymentMethod = "cash" | "transfer" | "card";
+
+export interface Expense {
+  id: string;
+  /** The day the money was spent, as YYYY-MM-DD. */
+  spentOn: string;
+  description: string;
+  category: string;
+  amount: number;
+  paymentMethod: ExpensePaymentMethod;
+  supplierId?: string;
+  /** Saved with the expense, so it stays readable if the supplier is removed. */
+  supplierName?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export type RequestStatus = "pending" | "approved" | "rejected" | "done";
+
+/** An official request made in the store, and the admin's decision on it. */
+export interface StoreRequest {
+  id: string;
+  title: string;
+  details?: string;
+  requestedBy: string;
+  amount?: number;
+  status: RequestStatus;
+  decisionNote?: string;
+  decidedAt?: string;
+  createdAt: string;
+}
+
 export interface Order {
   id: string;
   items: OrderItem[];

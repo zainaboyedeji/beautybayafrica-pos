@@ -44,18 +44,18 @@ services:
       - key: WOOCOMMERCE_WEBHOOK_SECRET
         sync: false
 
-  # The website: the cashier terminal screens, built as static files.
+  # The website: the till and back-office screens, built as static files.
   - type: web
     name: beautybayafrica-pos-app
     runtime: static
     branch: main
     buildCommand: >-
-      corepack pnpm install --frozen-lockfile --filter cashier-terminal... &&
-      corepack pnpm --filter cashier-terminal... run build
-    staticPublishPath: apps/cashier-terminal/out
+      corepack pnpm install --frozen-lockfile --filter staff-terminal... &&
+      corepack pnpm --filter staff-terminal... run build
+    staticPublishPath: apps/staff-terminal/out
     buildFilter:
       paths:
-        - apps/cashier-terminal/**
+        - apps/staff-terminal/**
         - packages/**
         - package.json
         - pnpm-lock.yaml
@@ -79,8 +79,20 @@ services:
         source: /customers
         destination: /customers.html
       - type: rewrite
-        source: /cashiers
-        destination: /cashiers.html
+        source: /suppliers
+        destination: /suppliers.html
+      - type: rewrite
+        source: /expenses
+        destination: /expenses.html
+      - type: rewrite
+        source: /requests
+        destination: /requests.html
+      - type: rewrite
+        source: /request
+        destination: /request.html
+      - type: rewrite
+        source: /staff
+        destination: /staff.html
     envVars:
       - key: NODE_VERSION
         value: "24"

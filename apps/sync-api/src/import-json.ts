@@ -18,8 +18,8 @@ async function main() {
   const catalog = read<Product & { quantity: number }>("catalog.json");
   const orders = read<Order>("orders.json");
   const customers = read<Customer>("customers.json");
-  const cashiers = read<{ id: string; name: string; salt: string; pinHash: string }>(
-    "cashiers.json",
+  const staff = read<{ id: string; name: string; salt: string; pinHash: string }>(
+    "staff.json",
   );
 
   const counts = await transaction(async (client) => {
@@ -87,21 +87,21 @@ async function main() {
       savedCustomers += rowCount ?? 0;
     }
 
-    let savedCashiers = 0;
-    for (const c of cashiers) {
+    let savedStaff = 0;
+    for (const m of staff) {
       const { rowCount } = await client.query(
-        `INSERT INTO cashiers (id, name, salt, pin_hash) VALUES ($1, $2, $3, $4)
+        `INSERT INTO staff (id, name, salt, pin_hash) VALUES ($1, $2, $3, $4)
          ON CONFLICT DO NOTHING`,
-        [c.id, c.name, c.salt, c.pinHash],
+        [m.id, m.name, m.salt, m.pinHash],
       );
-      savedCashiers += rowCount ?? 0;
+      savedStaff += rowCount ?? 0;
     }
-    return { products, sales, customers: savedCustomers, cashiers: savedCashiers };
+    return { products, sales, customers: savedCustomers, staff: savedStaff };
   });
 
   console.log(
     `Copied ${counts.products} products, ${counts.sales} sales, ` +
-      `${counts.customers} customers and ${counts.cashiers} cashiers from ${dataDir}.`,
+      `${counts.customers} customers and ${counts.staff} staff from ${dataDir}.`,
   );
   await db.end();
 }

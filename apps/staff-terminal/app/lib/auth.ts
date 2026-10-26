@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useSyncExternalStore } from "react";
 
-export type Role = "admin" | "cashier";
+export type Role = "admin" | "staff";
+const ROLES: Role[] = ["admin", "staff"];
 export type Session = { token: string; role: Role; name: string };
 
 const STORAGE_KEY = "pos-session";
@@ -18,7 +19,9 @@ const readSaved = () => {
 
 const parse = (saved: string | null): Session | null => {
   try {
-    return saved ? (JSON.parse(saved) as Session) : null;
+    const session = saved ? (JSON.parse(saved) as Session) : null;
+    // A login from an older version of the app has to be made again.
+    return session && ROLES.includes(session.role) ? session : null;
   } catch {
     return null;
   }
@@ -46,7 +49,7 @@ const subscribe = (onChange: () => void) => {
 
 /**
  * The logged-in user, or null while checking. Sends anyone not logged in to
- * the login page, and cashiers away from admin-only pages.
+ * the login page, and staff away from admin-only pages.
  */
 export function useSession(allowed: Role[]) {
   const router = useRouter();
