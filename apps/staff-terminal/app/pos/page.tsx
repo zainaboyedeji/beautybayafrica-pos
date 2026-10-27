@@ -115,18 +115,30 @@ export default function Till() {
   const printReceipt = async (order: Order) =>
     setPrintProblem(await printOrderReceipt(order, productNames));
 
+  // How many the shop has of a product, across its options.
+  const shopStock = useCallback(
+    (p: Product) =>
+      sellables(p).reduce((sum, s) => sum + Math.max(0, stock[s.key] ?? 0), 0),
+    [stock],
+  );
+
+  // Products in stock come first. Putting one in the sale doesn't move it.
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter((p) =>
-      [p, ...(p.variants ?? [])].some(
-        (x) =>
-          x.name.toLowerCase().includes(q) ||
-          x.sku.toLowerCase().includes(q) ||
-          (x.barcode ?? "").toLowerCase().includes(q),
-      ),
+    const found = q
+      ? products.filter((p) =>
+          [p, ...(p.variants ?? [])].some(
+            (x) =>
+              x.name.toLowerCase().includes(q) ||
+              x.sku.toLowerCase().includes(q) ||
+              (x.barcode ?? "").toLowerCase().includes(q),
+          ),
+        )
+      : products;
+    return [...found].sort(
+      (a, b) => Number(shopStock(b) > 0) - Number(shopStock(a) > 0),
     );
-  }, [products, search]);
+  }, [products, search, shopStock]);
 
   const lines = items
     .filter((s) => cart[s.key])
@@ -375,6 +387,9 @@ export default function Till() {
                   (sum, s) => sum + Math.max(0, left(s.key)),
                   0,
                 );
+                const owned = shopStock(p);
+                // The shop has some, but they're all in this sale already.
+                const allInSale = inStock <= 0 && owned > 0;
                 const prices = options.map((s) => s.price);
                 const lowest = Math.min(...prices);
                 return (
@@ -386,10 +401,16 @@ export default function Till() {
                         ? setPicking(p)
                         : setQuantity(p.id, (cart[p.id] ?? 0) + 1)
                     }
-                    className={`group flex flex-col rounded-2xl bg-white p-3 text-left shadow-soft transition hover:-translate-y-0.5 hover:ring-brand/40 active:scale-[0.98] disabled:translate-y-0 disabled:opacity-40 ${
+                    className={`group flex flex-col rounded-2xl bg-white p-3 text-left shadow-soft transition hover:-translate-y-0.5 hover:ring-brand/40 active:scale-[0.98] disabled:translate-y-0 ${
+                      allInSale
+                        ? "disabled:cursor-default"
+                        : "disabled:opacity-40"
+                    } ${
                       scan?.productId === p.id
                         ? "ring-4 ring-brand"
-                        : "ring-1 ring-line"
+                        : allInSale
+                          ? "ring-2 ring-brand/50"
+                          : "ring-1 ring-line"
                     }`}
                   >
                     {p.imageUrl ? (
@@ -425,14 +446,22 @@ export default function Till() {
                     </span>
                     <span
                       className={`px-1 text-xs ${
-                        inStock <= 0
-                          ? "font-medium text-red-700"
-                          : inStock <= 5
-                            ? "font-medium text-amber-700"
-                            : "text-muted"
+                        allInSale
+                          ? "font-semibold text-brand-deep"
+                          : inStock <= 0
+                            ? "font-medium text-red-700"
+                            : inStock <= 5
+                              ? "font-medium text-amber-700"
+                              : "text-muted"
                       }`}
                     >
-                      {inStock > 0 ? `${inStock} in stock` : "Out of stock"}
+                      {allInSale
+                        ? owned === 1
+                          ? "✓ In this sale (the only one)"
+                          : `✓ All ${owned} in this sale`
+                        : inStock > 0
+                          ? `${inStock} in stock`
+                          : "Out of stock"}
                     </span>
                   </button>
                 );
