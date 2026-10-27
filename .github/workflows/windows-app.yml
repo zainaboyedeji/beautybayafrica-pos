@@ -38,6 +38,7 @@ jobs:
 
       # Builds the .exe and .msi.
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -46,6 +47,20 @@ jobs:
           tagName: app-v__VERSION__
           releaseName: BeautyBay Africa POS v__VERSION__
           releaseBody: >-
-            Windows installer for BeautyBay Africa POS. Download the
-            `-setup.exe` file below and run it.
+            Windows installer for BeautyBay Africa POS. Download the `.zip`
+            file below, open it and run the setup file inside. (Browsers
+            often block the bare `.exe` because the app is new.)
           releaseDraft: false
+
+      # Browsers block downloads of new, unsigned .exe files but not .zip
+      # files, so the installer is also attached zipped.
+      - name: Attach zipped installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.tauri.outputs.appVersion }}
+        run: |
+          $setup = Get-ChildItem apps/staff-terminal/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $zip = "BeautyBay-Africa-POS-$env:VERSION-Windows.zip"
+          Compress-Archive -Path $setup.FullName -DestinationPath $zip
+          gh release upload "app-v$env:VERSION" $zip --clobber
