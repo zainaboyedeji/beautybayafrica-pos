@@ -48,8 +48,19 @@ export function savePrinter(printer: DirectPrinter | null) {
 export const listPrinterPorts = () =>
   invoke<PrinterPort[]>("list_printer_ports");
 
-const sendToPrinter = (port: string, commands: Uint8Array) =>
+const send = (port: string, commands: Uint8Array) =>
   invoke("print_raw", { port, data: Array.from(commands) });
+
+// A Bluetooth printer that has just woken up can miss the first
+// connection, so a failed print is tried once more before giving up.
+async function sendToPrinter(port: string, commands: Uint8Array) {
+  try {
+    await send(port, commands);
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await send(port, commands);
+  }
+}
 
 export const printTestPage = (printer: DirectPrinter) =>
   sendToPrinter(printer.port, testCommands(printer));

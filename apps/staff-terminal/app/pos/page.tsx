@@ -546,6 +546,14 @@ export default function Till() {
                     <span className="w-16 text-right text-sm font-medium">
                       {money.format(item.price * quantity)}
                     </span>
+                    <button
+                      aria-label={`Remove ${item.name} from the sale`}
+                      title="Remove from sale"
+                      onClick={() => setQuantity(item.key, 0)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-red-700 ring-1 ring-red-200 transition hover:bg-red-50 hover:ring-red-400"
+                    >
+                      ×
+                    </button>
                   </li>
                 ))}
               </ul>
