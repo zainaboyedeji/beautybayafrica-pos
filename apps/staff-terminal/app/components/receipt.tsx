@@ -35,10 +35,15 @@ function Divider() {
   );
 }
 
-type Props = { order: Order; productNames: Record<string, string> };
+type Props = {
+  order: Order;
+  productNames: Record<string, string>;
+  /** Printed again later, e.g. from the Sales page. */
+  copy?: boolean;
+};
 
 /** Hidden on screen; it is the only thing on the page when printing. */
-export default function Receipt({ order, productNames }: Props) {
+export default function Receipt({ order, productNames, copy }: Props) {
   const createdAt = new Date(order.createdAt);
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -63,6 +68,12 @@ export default function Receipt({ order, productNames }: Props) {
         <p className="text-center text-xs font-bold tracking-[0.3em]">
           SALES RECEIPT
         </p>
+        {copy && <p className="text-center text-[10px] font-bold">COPY</p>}
+        {order.refund && (
+          <p className="mt-1 border-2 border-black py-0.5 text-center text-xs font-bold tracking-[0.2em]">
+            REFUNDED {new Date(order.refund.at).toLocaleDateString("en-NG")}
+          </p>
+        )}
         <div className="mt-1">
           <p className="flex justify-between">
             <span>Receipt</span>
