@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Customer, Order, PaymentMethod, Product } from "@pos/types";
 import { flushSync } from "react-dom";
 import Receipt from "../components/receipt";
@@ -37,6 +37,19 @@ const EMPTY_CUSTOMER: Customer = { name: "", phone: "", email: "" };
 
 type CheckoutStep = "payment" | "customer";
 
+/**
+ * Whether a scanned code is a saved barcode. Scanners may add or drop a
+ * leading 0 (a 12-digit UPC read as a 13-digit EAN), so numbers match
+ * without their leading zeros.
+ */
+const sameBarcode = (saved: string, scanned: string) => {
+  const clean = (code: string) => {
+    const c = code.trim().toLowerCase();
+    return /^\d+$/.test(c) ? c.replace(/^0+/, "") : c;
+  };
+  return clean(saved) === clean(scanned);
+};
+
 export default function Till() {
   // RequireLogin only renders this page once someone is logged in.
   const session = getSession();
@@ -47,6 +60,13 @@ export default function Till() {
   // The product whose options are being chosen from.
   const [picking, setPicking] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
+  const searchBox = useRef<HTMLInputElement>(null);
+  // What the last scan did, shown under the top bar until the next one.
+  const [scan, setScan] = useState<{
+    text: string;
+    ok: boolean;
+    productId?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,16 +136,70 @@ export default function Till() {
     });
   };
 
+  // A scan goes to the search box even when a product or the cart was
+  // tapped last. Typing in another field, or with a pop-up open, is left alone.
+  const dialogOpen = picking !== null || step !== null;
+  useEffect(() => {
+    if (dialogOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const box = searchBox.current;
+      const target = e.target as HTMLElement | null;
+      if (
+        !box ||
+        target === box ||
+        e.key.length !== 1 ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        target?.closest("input, textarea, select, [contenteditable]")
+      )
+        return;
+      e.preventDefault();
+      box.focus();
+      // Replaces a selected code from the last scan, like typing in the box.
+      box.setRangeText(
+        e.key,
+        box.selectionStart ?? 0,
+        box.selectionEnd ?? 0,
+        "end",
+      );
+      setSearch(box.value);
+      setScan(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dialogOpen]);
+
   // A barcode scanner types the code into the search box and presses Enter.
+  // The code stays in the box, so the product it found shows on its own, and
+  // is selected, so the next scan replaces it.
   const addScanned = () => {
     const code = search.trim().toLowerCase();
     if (!code) return;
+    searchBox.current?.select();
     const match = items.find(
-      (s) => s.barcode?.toLowerCase() === code || s.sku.toLowerCase() === code,
+      (s) =>
+        (s.barcode !== undefined && sameBarcode(s.barcode, code)) ||
+        s.sku.toLowerCase() === code,
     );
     if (match) {
-      setQuantity(match.key, (cart[match.key] ?? 0) + 1);
-      setSearch("");
+      if (left(match.key) <= 0) {
+        setScan({
+          text: `No more ${match.name} in stock.`,
+          ok: false,
+          productId: match.product.id,
+        });
+        return;
+      }
+      const quantity = (cart[match.key] ?? 0) + 1;
+      setQuantity(match.key, quantity);
+      setScan({
+        text: `Added ${match.name} · ${money.format(match.price)}${
+          quantity > 1 ? ` (${quantity} in this sale)` : ""
+        }`,
+        ok: true,
+        productId: match.product.id,
+      });
       return;
     }
     // The product's own SKU on a product with options: ask which one.
@@ -134,8 +208,17 @@ export default function Till() {
     );
     if (parent) {
       setPicking(parent);
-      setSearch("");
+      setScan({
+        text: `Choose which ${parent.name} to add.`,
+        ok: true,
+        productId: parent.id,
+      });
+      return;
     }
+    setScan({
+      text: `No product has the barcode or SKU "${search.trim()}". Add the barcode to the product in Inventory.`,
+      ok: false,
+    });
   };
 
   const startCheckout = () => {
@@ -214,9 +297,13 @@ export default function Till() {
             <Icon name="search" className="h-4 w-4" />
           </span>
           <input
+            ref={searchBox}
             value={search}
             autoFocus
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setScan(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") addScanned();
             }}
@@ -232,6 +319,23 @@ export default function Till() {
           <button onClick={() => void load()} className="font-medium underline">
             Retry
           </button>
+        </div>
+      )}
+
+      {scan && (
+        <div
+          role="status"
+          className={`flex animate-pop-in items-center gap-3 rounded-xl px-5 py-2.5 text-sm ring-1 print:hidden ${
+            scan.ok
+              ? "bg-emerald-50 text-emerald-900 ring-emerald-100"
+              : "bg-amber-50 text-amber-900 ring-amber-100"
+          }`}
+        >
+          <Icon
+            name={scan.ok ? "check" : "search"}
+            className="h-4 w-4 shrink-0"
+          />
+          <span className="font-medium">{scan.text}</span>
         </div>
       )}
 
@@ -260,7 +364,11 @@ export default function Till() {
                         ? setPicking(p)
                         : setQuantity(p.id, (cart[p.id] ?? 0) + 1)
                     }
-                    className="group flex flex-col rounded-2xl bg-white p-3 text-left shadow-soft ring-1 ring-line transition hover:-translate-y-0.5 hover:ring-brand/40 active:scale-[0.98] disabled:translate-y-0 disabled:opacity-40"
+                    className={`group flex flex-col rounded-2xl bg-white p-3 text-left shadow-soft transition hover:-translate-y-0.5 hover:ring-brand/40 active:scale-[0.98] disabled:translate-y-0 disabled:opacity-40 ${
+                      scan?.productId === p.id
+                        ? "ring-4 ring-brand"
+                        : "ring-1 ring-line"
+                    }`}
                   >
                     {p.imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -324,7 +432,10 @@ export default function Till() {
             {lines.length === 0 ? (
               <div className="py-8 text-center">
                 <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-soft to-violet-100 text-brand-deep">
-                  <Icon name={lastOrder ? "check" : "sell"} className="h-6 w-6" />
+                  <Icon
+                    name={lastOrder ? "check" : "sell"}
+                    className="h-6 w-6"
+                  />
                 </span>
                 <p className="mt-3 text-sm text-muted">
                   {lastOrder
@@ -468,11 +579,7 @@ export default function Till() {
 
       {step && (
         <div className={OVERLAY}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            className={`${DIALOG} max-w-md`}
-          >
+          <div role="dialog" aria-modal="true" className={`${DIALOG} max-w-md`}>
             <div className="flex items-center gap-2">
               {(["payment", "customer"] as const).map((s) => (
                 <span
@@ -527,7 +634,9 @@ export default function Till() {
                   if (!existing) void completeSale();
                 }}
               >
-                <h2 className="mt-1 text-2xl font-semibold">Customer details</h2>
+                <h2 className="mt-1 text-2xl font-semibold">
+                  Customer details
+                </h2>
                 <p className="text-sm text-muted">
                   Paying by{" "}
                   {paymentMethod && PAYMENT_LABELS[paymentMethod].toLowerCase()}
