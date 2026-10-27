@@ -25,6 +25,9 @@ export interface Product {
   imageUrl?: CloudinaryUrl;
   /** e.g. Skincare or Hair care. */
   category?: string;
+  /** Who the shop buys it from. */
+  supplierId?: string;
+  supplierName?: string;
   /** Copied from the online shop, which sets its selling price. */
   fromWebsite?: boolean;
   /**
@@ -119,11 +122,15 @@ export interface Seller {
   staffId?: string;
 }
 
+/** "offline" is a sale in the shop, including every till sale. */
+export type SaleChannel = "online" | "offline";
+
 export interface Order {
   id: string;
   items: OrderItem[];
   total: number;
   paymentMethod: PaymentMethod;
+  channel: SaleChannel;
   customer: Customer;
   /** Missing on sales made before sellers were recorded. */
   soldBy?: Seller;

@@ -7,6 +7,7 @@ import {
   categoryList,
   describeError,
   fetchCatalog,
+  fetchSuppliers,
   useLoad,
 } from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
@@ -20,7 +21,11 @@ const EMPTY_FORM = {
   price: "",
   quantity: "",
   imageUrl: "",
+  supplierId: "",
 };
+
+// Chosen in the supplier list to type in a supplier that isn't saved yet.
+const NEW_SUPPLIER = "__new__";
 
 const FIELDS = [
   { key: "sku", label: "SKU", type: "text", required: true },
@@ -114,9 +119,12 @@ export default function AddProductForm({
           price: product.price.toString(),
           quantity: (stock[product.id] ?? 0).toString(),
           imageUrl: product.imageUrl ?? "",
+          supplierId: product.supplierId ?? "",
         }
       : EMPTY_FORM,
   );
+  const suppliers = useLoad(fetchSuppliers);
+  const [newSupplier, setNewSupplier] = useState({ name: "", phone: "" });
   const [options, setOptions] = useState<OptionForm[]>(
     (product?.variants ?? []).map((v) => ({
       id: v.id,
@@ -160,10 +168,32 @@ export default function AddProductForm({
   const updateOption = (index: number, change: Partial<OptionForm>) =>
     setOptions(options.map((o, i) => (i === index ? { ...o, ...change } : o)));
 
+  // Saves the supplier typed into the form, and selects it so a retry
+  // doesn't add it twice.
+  const saveNewSupplier = async () => {
+    const res = await apiFetch("/suppliers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: newSupplier.name.trim(),
+        phone: newSupplier.phone.trim(),
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? "Could not save the supplier");
+    await suppliers.reload();
+    setForm((current) => ({ ...current, supplierId: body.id }));
+    return body.id as string;
+  };
+
   const submit = async () => {
     setSaving(true);
     setError(null);
     try {
+      const supplierId =
+        form.supplierId === NEW_SUPPLIER
+          ? await saveNewSupplier()
+          : form.supplierId;
       const res = await apiFetch(
         product ? `/products/${product.id}` : "/products",
         {
@@ -173,6 +203,7 @@ export default function AddProductForm({
             sku: form.sku,
             name: form.name,
             category: form.category.trim(),
+            ...(supplierId ? { supplierId } : {}),
             ...(form.imageUrl.trim() !== ""
               ? { imageUrl: form.imageUrl.trim() }
               : {}),
@@ -288,6 +319,61 @@ export default function AddProductForm({
           alt="Product image preview"
           className="col-span-2 h-32 w-32 rounded-lg border border-line object-cover"
         />
+      )}
+
+      <label className="col-span-2 text-sm font-medium">
+        Supplier <span className="font-normal text-muted">(optional)</span>
+        <select
+          value={form.supplierId}
+          onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
+          className={INPUT}
+        >
+          <option value="">None</option>
+          {/* A removed supplier, or one still loading. */}
+          {product?.supplierId &&
+            !suppliers.data?.some((s) => s.id === product.supplierId) && (
+              <option value={product.supplierId}>
+                {product.supplierName ?? "Current supplier"}
+              </option>
+            )}
+          {(suppliers.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+          <option value={NEW_SUPPLIER}>+ Add a new supplier…</option>
+        </select>
+      </label>
+      {form.supplierId === NEW_SUPPLIER && (
+        <div className="col-span-2 grid grid-cols-2 gap-3 rounded-lg border border-line bg-surface-alt/50 p-3">
+          <label className="text-sm font-medium">
+            Supplier name
+            <input
+              required
+              autoFocus
+              value={newSupplier.name}
+              onChange={(e) =>
+                setNewSupplier({ ...newSupplier, name: e.target.value })
+              }
+              className={INPUT}
+            />
+          </label>
+          <label className="text-sm font-medium">
+            Phone <span className="font-normal text-muted">(optional)</span>
+            <input
+              type="tel"
+              value={newSupplier.phone}
+              onChange={(e) =>
+                setNewSupplier({ ...newSupplier, phone: e.target.value })
+              }
+              className={INPUT}
+            />
+          </label>
+          <p className="col-span-2 text-xs text-muted">
+            Saved to Suppliers with this product. Add their other details
+            there.
+          </p>
+        </div>
       )}
 
       <label className="col-span-2 mt-1 flex items-center gap-2 text-sm font-medium">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { Order } from "@pos/types";
+import type { Order, SaleChannel } from "@pos/types";
 import ActionModals, {
   Notice,
   type ActionModal,
@@ -13,12 +13,33 @@ import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { fetchCatalog, fetchOrders, money, useLoad } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
 
+const CHANNEL_FILTERS: Record<"" | SaleChannel, string> = {
+  "": "Online and offline",
+  offline: "Offline only",
+  online: "Online only",
+};
+
+function ChannelBadge({ channel }: { channel: SaleChannel }) {
+  return (
+    <span
+      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+        channel === "online"
+          ? "bg-sky-100 text-sky-800"
+          : "bg-surface-alt text-muted"
+      }`}
+    >
+      {channel === "online" ? "Online" : "Offline"}
+    </span>
+  );
+}
+
 export default function SalesPage() {
   const orders = useLoad(fetchOrders);
   const catalog = useLoad(fetchCatalog);
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [channel, setChannel] = useState<"" | SaleChannel>("");
 
   const productName = (id: string) =>
     catalog.data?.products.find((p) => p.id === id)?.name ?? "Removed product";
@@ -31,8 +52,10 @@ export default function SalesPage() {
   const visible = orders.data
     ? [...orders.data]
         .reverse()
-        .filter((order) =>
-          matches(
+        .filter(
+          (order) =>
+            (!channel || order.channel === channel) &&
+            matches(
             search,
             order.customer.name,
             order.customer.phone,
@@ -43,7 +66,7 @@ export default function SalesPage() {
         )
     : null;
 
-  const pager = usePagination(visible, JSON.stringify([search]));
+  const pager = usePagination(visible, JSON.stringify([search, channel]));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -65,13 +88,33 @@ export default function SalesPage() {
         }}
       />
 
-      <div className="mt-6">
-        <SearchBox
-          value={search}
-          onChange={setSearch}
-          placeholder="Search by customer, phone, item or payment"
-        />
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="min-w-64 flex-1">
+          <SearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by customer, phone, item or payment"
+          />
+        </div>
+        <select
+          aria-label="Online or offline"
+          value={channel}
+          onChange={(e) => setChannel(e.target.value as "" | SaleChannel)}
+          className="rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+        >
+          {Object.entries(CHANNEL_FILTERS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </div>
+      {visible && orders.data && (
+        <p className="mt-3 text-sm text-muted">
+          {visible.length} sale{visible.length === 1 ? "" : "s"} ·{" "}
+          {money.format(visible.reduce((sum, o) => sum + o.total, 0))}
+        </p>
+      )}
 
       <div className="mt-4">
         {orders.failed ? (
@@ -90,6 +133,7 @@ export default function SalesPage() {
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Phone</th>
                 <th className="px-4 py-3">Items</th>
+                <th className="px-4 py-3">Channel</th>
                 <th className="px-4 py-3">Payment</th>
                 <th className="px-4 py-3">Sold by</th>
                 <th className="px-4 py-3 text-right">Total</th>
@@ -106,6 +150,9 @@ export default function SalesPage() {
                   </td>
                   <td className="px-4 py-3">{order.customer.phone}</td>
                   <td className="px-4 py-3">{itemsText(order)}</td>
+                  <td className="px-4 py-3">
+                    <ChannelBadge channel={order.channel} />
+                  </td>
                   <td className="px-4 py-3 capitalize">
                     {order.paymentMethod}
                   </td>

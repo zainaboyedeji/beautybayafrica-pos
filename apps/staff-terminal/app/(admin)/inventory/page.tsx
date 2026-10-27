@@ -35,6 +35,7 @@ const TEMPLATE =
 // Same threshold as the dashboard's low-stock list.
 const LOW_STOCK = 5;
 const NO_CATEGORY = "__none__";
+const NO_SUPPLIER = "__none__";
 
 const STOCK_FILTERS = {
   "": "All stock levels",
@@ -66,6 +67,7 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [supplier, setSupplier] = useState("");
   const [stockFilter, setStockFilter] =
     useState<keyof typeof STOCK_FILTERS>("");
   const [source, setSource] = useState<keyof typeof SOURCE_FILTERS>("");
@@ -76,6 +78,14 @@ export default function InventoryPage() {
   const all = catalog.data?.products ?? [];
   const stock = catalog.data?.stock ?? {};
   const categories = categoryList(all);
+  // Suppliers that products are linked to, by id.
+  const suppliers = [
+    ...new Map(
+      all
+        .filter((p) => p.supplierId)
+        .map((p) => [p.supplierId!, p.supplierName ?? "Removed supplier"]),
+    ),
+  ].sort((a, b) => a[1].localeCompare(b[1]));
   const stockLevel = (p: Product) => {
     if ((stock[p.id] ?? 0) <= 0) return "out";
     // One shade running low counts, as on the dashboard.
@@ -89,10 +99,14 @@ export default function InventoryPage() {
 
   const products = catalog.data?.products.filter(
     (p) =>
-      (matches(search, p.name, p.sku, p.barcode, p.category) ||
+      (matches(search, p.name, p.sku, p.barcode, p.category, p.supplierName) ||
         optionMatches(p)) &&
       (!category ||
         (category === NO_CATEGORY ? !p.category : p.category === category)) &&
+      (!supplier ||
+        (supplier === NO_SUPPLIER
+          ? !p.supplierId
+          : p.supplierId === supplier)) &&
       (!stockFilter ||
         (stockFilter === "in"
           ? stockLevel(p) !== "out"
@@ -100,10 +114,18 @@ export default function InventoryPage() {
       (!source || (source === "website") === !!p.fromWebsite) &&
       (!type || (type === "options") === !!p.variants),
   );
-  const filtered = !!(search || category || stockFilter || source || type);
+  const filtered = !!(
+    search ||
+    category ||
+    supplier ||
+    stockFilter ||
+    source ||
+    type
+  );
   const clearFilters = () => {
     setSearch("");
     setCategory("");
+    setSupplier("");
     setStockFilter("");
     setSource("");
     setType("");
@@ -150,7 +172,7 @@ export default function InventoryPage() {
 
   const pager = usePagination(
     products,
-    JSON.stringify([search, category, stockFilter, source, type]),
+    JSON.stringify([search, category, supplier, stockFilter, source, type]),
   );
 
   return (
@@ -259,7 +281,7 @@ export default function InventoryPage() {
           <SearchBox
             value={search}
             onChange={setSearch}
-            placeholder="Search by name, SKU, barcode or category"
+            placeholder="Search by name, SKU, barcode, category or supplier"
           />
         </div>
         <select
@@ -276,6 +298,22 @@ export default function InventoryPage() {
           ))}
           <option value={NO_CATEGORY}>
             No category ({all.filter((p) => !p.category).length})
+          </option>
+        </select>
+        <select
+          aria-label="Supplier"
+          value={supplier}
+          onChange={(e) => setSupplier(e.target.value)}
+          className={SELECT}
+        >
+          <option value="">All suppliers</option>
+          {suppliers.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name} ({all.filter((p) => p.supplierId === id).length})
+            </option>
+          ))}
+          <option value={NO_SUPPLIER}>
+            No supplier ({all.filter((p) => !p.supplierId).length})
           </option>
         </select>
         <select
@@ -420,21 +458,13 @@ export default function InventoryPage() {
                               <span className="ml-2 whitespace-nowrap rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
                                 {p.variants.length} options
                               </span>
-                              {p.category && (
-                                <span className="block text-xs text-muted">
-                                  {p.category}
-                                </span>
-                              )}
+                              <ProductDetails product={p} />
                             </span>
                           </button>
                         ) : (
                           <>
                             <span className="font-medium">{p.name}</span>
-                            {p.category && (
-                              <span className="block text-xs text-muted">
-                                {p.category}
-                              </span>
-                            )}
+                            <ProductDetails product={p} />
                           </>
                         )}
                       </td>
@@ -512,6 +542,17 @@ export default function InventoryPage() {
       <Pagination pager={pager} label="products" />
     </div>
   );
+}
+
+/** The category and supplier shown under a product's name. */
+function ProductDetails({ product }: { product: Product }) {
+  const details = [
+    product.category,
+    product.supplierName && `Supplier: ${product.supplierName}`,
+  ].filter(Boolean);
+  return details.length > 0 ? (
+    <span className="block text-xs text-muted">{details.join(" · ")}</span>
+  ) : null;
 }
 
 /** Cost, selling price and margin cells for a product or option. */

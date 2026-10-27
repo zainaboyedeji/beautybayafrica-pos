@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { PaymentMethod } from "@pos/types";
+import type { PaymentMethod, SaleChannel } from "@pos/types";
 import {
   API_URL,
   apiFetch,
@@ -22,6 +22,11 @@ type Line = { key: string; quantity: string };
 
 const EMPTY_LINE: Line = { key: "", quantity: "1" };
 
+const CHANNELS: { value: SaleChannel; label: string; hint: string }[] = [
+  { value: "offline", label: "Offline", hint: "Sold in the shop" },
+  { value: "online", label: "Online", hint: "Website, Instagram, WhatsApp…" },
+];
+
 type Props = { onSaved: (message: string) => void; onCancel: () => void };
 
 export default function RecordSaleForm({ onSaved, onCancel }: Props) {
@@ -34,6 +39,8 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
     phone: "",
     email: "",
   });
+  // Left unset so the admin has to say where the sale happened.
+  const [channel, setChannel] = useState<SaleChannel | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("transfer");
   const [date, setDate] = useState("");
   const [lines, setLines] = useState<Line[]>([EMPTY_LINE]);
@@ -52,6 +59,10 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
     setLines(lines.map((l, i) => (i === index ? { ...l, ...change } : l)));
 
   const submit = async () => {
+    if (!channel) {
+      setError("Choose whether this sale was online or offline");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -75,6 +86,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentMethod,
+          channel,
           customer,
           items: [...quantities].map(([key, quantity]) =>
             orderItem(
@@ -88,7 +100,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not record sale");
       onSaved(
-        `Sale of ${money.format(body.total)} recorded for ${body.customer.name}.`,
+        `${channel === "online" ? "Online" : "Offline"} sale of ${money.format(body.total)} recorded for ${body.customer.name}.`,
       );
     } catch (e) {
       setError(describeError(e, "Could not record sale"));
@@ -103,7 +115,42 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
         void submit();
       }}
     >
-      <div className="grid gap-3 md:grid-cols-3">
+      <fieldset>
+        <legend className="text-sm font-medium">
+          Where was this sale made?
+        </legend>
+        <div className="mt-1 grid gap-3 sm:grid-cols-2">
+          {CHANNELS.map((c) => (
+            <label
+              key={c.value}
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors ${
+                channel === c.value
+                  ? "border-brand bg-brand-soft/40"
+                  : "border-line-strong hover:bg-surface-alt"
+              }`}
+            >
+              <input
+                type="radio"
+                name="channel"
+                required
+                value={c.value}
+                checked={channel === c.value}
+                onChange={() => {
+                  setChannel(c.value);
+                  setError(null);
+                }}
+                className="h-4 w-4 accent-brand-deep"
+              />
+              <span>
+                <span className="block font-semibold">{c.label}</span>
+                <span className="block text-xs text-muted">{c.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         <label className="text-sm font-medium">
           Customer
           <select

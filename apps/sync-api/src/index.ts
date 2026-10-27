@@ -24,6 +24,7 @@ import type {
   ProductVariant,
   RequestKind,
   RequestStatus,
+  SaleChannel,
   Seller,
   StoreItem,
   StoreItemAssignment,
@@ -61,6 +62,9 @@ type ProductRow = {
   barcode: string | null;
   image_url: string | null;
   category: string | null;
+  supplier_id: string | null;
+  /** Only filled by `fetchProducts`, which joins the suppliers. */
+  supplier_name?: string | null;
   quantity: number;
   wc_id: number | null;
   updated_at: Date;
@@ -77,8 +81,22 @@ const toProduct = (row: ProductRow): Product => ({
     ? { imageUrl: row.image_url as CloudinaryUrl }
     : {}),
   ...(row.category !== null ? { category: row.category } : {}),
+  ...(row.supplier_id !== null ? { supplierId: row.supplier_id } : {}),
+  ...(row.supplier_name ? { supplierName: row.supplier_name } : {}),
   ...(row.wc_id !== null ? { fromWebsite: true } : {}),
 });
+
+/** Products in the order they were added, with their supplier's name. */
+const fetchProducts = async (ids?: string[]) =>
+  (
+    await db.query<ProductRow>(
+      `SELECT p.*, s.name AS supplier_name
+       FROM products p LEFT JOIN suppliers s ON s.id = p.supplier_id
+       WHERE $1::text[] IS NULL OR p.id = ANY($1)
+       ORDER BY p.created_at`,
+      [ids ?? null],
+    )
+  ).rows;
 
 type VariantRow = {
   id: string;
@@ -561,10 +579,7 @@ app.delete("/staff/:id", adminOnly, async (req, res) => {
 });
 
 app.get("/products", anyone, async (_req, res) => {
-  const { rows } = await db.query<ProductRow>(
-    "SELECT * FROM products ORDER BY created_at",
-  );
-  res.json(withVariants(rows, await fetchVariants()));
+  res.json(withVariants(await fetchProducts(), await fetchVariants()));
 });
 
 type VariantInput = Omit<ProductVariant, "id"> & {
@@ -573,7 +588,7 @@ type VariantInput = Omit<ProductVariant, "id"> & {
   quantity: number;
 };
 
-type ProductInput = Omit<Product, "id" | "variants"> & {
+type ProductInput = Omit<Product, "id" | "variants" | "supplierName"> & {
   quantity: number;
   variants: VariantInput[];
 };
@@ -635,6 +650,7 @@ const readProductInput = (body: any): ProductInput | string => {
     if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/"))
       return "Image link must start with https://res.cloudinary.com/";
     const category = String(body?.category ?? "").trim();
+    const supplierId = optionalText(body?.supplierId);
     return {
       sku,
       name,
@@ -643,6 +659,7 @@ const readProductInput = (body: any): ProductInput | string => {
       variants,
       ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
       ...(category ? { category } : {}),
+      ...(supplierId ? { supplierId } : {}),
     };
   }
   const product = readSimpleProduct(body);
@@ -669,6 +686,7 @@ const readSimpleProduct = (
   if (imageUrl && !imageUrl.startsWith("https://res.cloudinary.com/"))
     return "Image link must start with https://res.cloudinary.com/";
   const category = String(body?.category ?? "").trim();
+  const supplierId = optionalText(body?.supplierId);
 
   return {
     sku,
@@ -679,6 +697,7 @@ const readSimpleProduct = (
     ...(barcode ? { barcode } : {}),
     ...(imageUrl ? { imageUrl: imageUrl as CloudinaryUrl } : {}),
     ...(category ? { category } : {}),
+    ...(supplierId ? { supplierId } : {}),
   };
 };
 
@@ -788,7 +807,17 @@ const productValues = (input: Omit<ProductInput, "variants">) => [
   input.imageUrl ?? null,
   input.quantity,
   input.category ?? null,
+  input.supplierId ?? null,
 ];
+
+/** Error message when the product's supplier doesn't exist. */
+const missingSupplier = async (input: ProductInput) => {
+  if (!input.supplierId) return null;
+  const { rows } = await db.query("SELECT 1 FROM suppliers WHERE id = $1", [
+    input.supplierId,
+  ]);
+  return rows.length === 0 ? "That supplier no longer exists" : null;
+};
 
 app.post("/products", adminOnly, async (req, res) => {
   const input = readProductInput(req.body);
@@ -796,7 +825,7 @@ app.post("/products", adminOnly, async (req, res) => {
     res.status(400).json({ error: input });
     return;
   }
-  const conflict = await findConflict(input);
+  const conflict = (await findConflict(input)) ?? (await missingSupplier(input));
   if (conflict) {
     res.status(409).json({ error: conflict });
     return;
@@ -804,8 +833,8 @@ app.post("/products", adminOnly, async (req, res) => {
 
   const product = await transaction(async (client) => {
     const { rows } = await client.query<ProductRow>(
-      `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, category, id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      `INSERT INTO products (sku, name, price, cost_price, barcode, image_url, quantity, category, supplier_id, id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [...productValues(input), randomUUID()],
     );
     await saveVariants(client, rows[0].id, input.variants);
@@ -814,7 +843,9 @@ app.post("/products", adminOnly, async (req, res) => {
   await logBy(res, "product_added", `Added ${product.name} (${product.sku})`);
   res
     .status(201)
-    .json(withVariants([product], await fetchVariants([product.id]))[0]);
+    .json(
+      withVariants(await fetchProducts([product.id]), await fetchVariants([product.id]))[0],
+    );
 });
 
 app.put("/products/:id", adminOnly, async (req, res) => {
@@ -824,7 +855,8 @@ app.put("/products/:id", adminOnly, async (req, res) => {
     res.status(400).json({ error: input });
     return;
   }
-  const conflict = await findConflict(input, id);
+  const conflict =
+    (await findConflict(input, id)) ?? (await missingSupplier(input));
   if (conflict) {
     res.status(409).json({ error: conflict });
     return;
@@ -837,8 +869,8 @@ app.put("/products/:id", adminOnly, async (req, res) => {
     const { rows } = await client.query<ProductRow>(
       `UPDATE products SET sku = $1, name = $2, price = $3, cost_price = $4,
          barcode = $5, image_url = $6, quantity = $7, category = $8,
-         updated_at = now()
-       WHERE id = $9 RETURNING *`,
+         supplier_id = $9, updated_at = now()
+       WHERE id = $10 RETURNING *`,
       [...productValues(input), id],
     );
     if (rows.length === 0) throw new HttpError(404, "Product not found");
@@ -846,7 +878,7 @@ app.put("/products/:id", adminOnly, async (req, res) => {
     return rows[0];
   });
   await logBy(res, "product_updated", `Updated ${product.name} (${product.sku})`);
-  res.json(withVariants([product], await fetchVariants([id]))[0]);
+  res.json(withVariants(await fetchProducts([id]), await fetchVariants([id]))[0]);
 });
 
 app.get("/inventory", anyone, async (_req, res) => {
@@ -1103,6 +1135,7 @@ app.get("/orders", adminOnly, async (req, res) => {
     id: string;
     total: number;
     payment_method: PaymentMethod;
+    channel: SaleChannel;
     customer_name: string;
     customer_phone: string;
     customer_email: string | null;
@@ -1128,6 +1161,7 @@ app.get("/orders", adminOnly, async (req, res) => {
         items: row.items,
         total: row.total,
         paymentMethod: row.payment_method,
+        channel: row.channel,
         customer: toCustomer({
           name: row.customer_name,
           phone: row.customer_phone,
@@ -1216,6 +1250,10 @@ app.post("/orders", anyone, async (req, res) => {
   }
 
   const session = sessionOf(res);
+  // The till sends no channel, so its sales are offline. Only the admin,
+  // recording a sale in the back office, can mark one as online.
+  const channel: SaleChannel =
+    session.role === "admin" && req.body?.channel === "online" ? "online" : "offline";
   const soldBy: Seller = {
     role: session.role === "admin" ? "admin" : "staff",
     name: session.name,
@@ -1282,14 +1320,15 @@ app.post("/orders", anyone, async (req, res) => {
       items,
       total: Math.round(total * 100) / 100,
       paymentMethod: paymentMethod satisfies PaymentMethod,
+      channel,
       customer,
       soldBy,
       createdAt: createdAt.toISOString(),
     };
     await client.query(
       `INSERT INTO orders (id, total, payment_method, customer_name, customer_phone,
-         customer_email, created_at, sold_by_role, sold_by_name, sold_by_staff_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         customer_email, created_at, sold_by_role, sold_by_name, sold_by_staff_id, channel)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         order.id,
         order.total,
@@ -1301,6 +1340,7 @@ app.post("/orders", anyone, async (req, res) => {
         soldBy.role,
         soldBy.name,
         soldBy.staffId ?? null,
+        channel,
       ],
     );
     for (const [line, item] of items.entries()) {
@@ -1326,7 +1366,7 @@ app.post("/orders", anyone, async (req, res) => {
     res,
     "sale",
     `Sold ${count} item${count === 1 ? "" : "s"} for ${naira.format(order.total)} ` +
-      `(${paymentMethod === "card" ? "card" : "bank transfer"}) to ${order.customer.name}` +
+      `(${paymentMethod === "card" ? "card" : "bank transfer"}, ${channel}) to ${order.customer.name}` +
       (req.body?.createdAt ? `, dated ${createdAt.toLocaleDateString("en-NG")}` : ""),
   );
   res.status(201).json(order);
