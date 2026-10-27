@@ -1,25 +1,25 @@
 import type { Order, PaymentMethod } from "@pos/types";
 import { money } from "../lib/api";
 
-const SHOP_NAME = process.env.NEXT_PUBLIC_SHOP_NAME ?? "Beauty Bay Africa";
-const SHOP_ADDRESS =
+export const SHOP_NAME = process.env.NEXT_PUBLIC_SHOP_NAME ?? "Beauty Bay Africa";
+export const SHOP_ADDRESS =
   process.env.NEXT_PUBLIC_SHOP_ADDRESS ??
   "112 Herbert Macaulay Way, Ebute Metta East, Lagos, Nigeria";
-const SHOP_PHONE = process.env.NEXT_PUBLIC_SHOP_PHONE ?? "0816 259 8682";
-const SHOP_WEBSITE = process.env.NEXT_PUBLIC_SHOP_WEBSITE ?? "beautybayafrica.com";
-const SHOP_INSTAGRAM =
+export const SHOP_PHONE = process.env.NEXT_PUBLIC_SHOP_PHONE ?? "0816 259 8682";
+export const SHOP_WEBSITE = process.env.NEXT_PUBLIC_SHOP_WEBSITE ?? "beautybayafrica.com";
+export const SHOP_INSTAGRAM =
   process.env.NEXT_PUBLIC_SHOP_INSTAGRAM ?? "@beautybayafrica";
-const SHOP_WHATSAPP =
+export const SHOP_WHATSAPP =
   process.env.NEXT_PUBLIC_SHOP_WHATSAPP ?? "+234 816 259 8682";
 // Optional footer line, e.g. a returns policy.
-const RECEIPT_NOTE = process.env.NEXT_PUBLIC_RECEIPT_NOTE;
+export const RECEIPT_NOTE = process.env.NEXT_PUBLIC_RECEIPT_NOTE;
 
 // Printable width for each paper roll; thermal printers leave a margin.
 const PAPER_WIDTHS: Record<string, string> = { "58": "48mm", "80": "72mm" };
 const PAPER_WIDTH =
   PAPER_WIDTHS[process.env.NEXT_PUBLIC_RECEIPT_PAPER ?? "80"] ?? "72mm";
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   transfer: "Bank transfer",
   card: "Card",
 };

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "BeautyBay Africa POS",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.beautybayafrica.pos",
   "build": {
     "frontendDist": "https://beautybayafrica-pos-app.onrender.com",

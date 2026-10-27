@@ -13,9 +13,10 @@ import {
   sellables,
 } from "../lib/api";
 import { getSession } from "../lib/auth";
-import { printPage } from "../lib/print";
+import { printOrderReceipt } from "../lib/print";
 import { INPUT, PRIMARY_BUTTON } from "../components/form-styles";
 import Icon from "../components/icons";
+import PrinterSettings, { useDesktopApp } from "../components/printer-settings";
 import TopBar from "../components/top-bar";
 
 // Pop-ups over the till: a soft veil and a white card that pops in.
@@ -77,6 +78,10 @@ export default function Till() {
   );
   const [customer, setCustomer] = useState<Customer>(EMPTY_CUSTOMER);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const desktopApp = useDesktopApp();
+  const [printerSettings, setPrinterSettings] = useState(false);
+  // Why the receipt printer didn't print the last receipt.
+  const [printProblem, setPrintProblem] = useState<string | null>(null);
   // A saved customer with the phone number typed in, waiting for the
   // staff member to say whether it's the same person.
   const [existing, setExisting] = useState<Customer | null>(null);
@@ -103,6 +108,12 @@ export default function Till() {
   }, [load]);
 
   const items = useMemo(() => products.flatMap(sellables), [products]);
+  const productNames = useMemo(
+    () => Object.fromEntries(products.map((p) => [p.id, p.name])),
+    [products],
+  );
+  const printReceipt = async (order: Order) =>
+    setPrintProblem(await printOrderReceipt(order, productNames));
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -138,7 +149,7 @@ export default function Till() {
 
   // A scan goes to the search box even when a product or the cart was
   // tapped last. Typing in another field, or with a pop-up open, is left alone.
-  const dialogOpen = picking !== null || step !== null;
+  const dialogOpen = picking !== null || step !== null || printerSettings;
   useEffect(() => {
     if (dialogOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -263,7 +274,8 @@ export default function Till() {
       if (!res.ok) throw new Error(body.error ?? "Order failed");
       // Render the receipt now so the print dialog shows this sale.
       flushSync(() => setLastOrder(body as Order));
-      if (AUTO_PRINT) await printPage();
+      setPrintProblem(null);
+      if (AUTO_PRINT) await printReceipt(body as Order);
       setCart({});
       setStep(null);
       await load();
@@ -292,6 +304,16 @@ export default function Till() {
           { href: "/request", label: "Requests", icon: "requests" },
         ]}
       >
+        {desktopApp && (
+          <button
+            onClick={() => setPrinterSettings(true)}
+            title="Receipt printer"
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-ink/80 transition hover:bg-white/35 hover:text-ink"
+          >
+            <Icon name="printer" className="h-4 w-4" />
+            Printer
+          </button>
+        )}
         <div className="relative">
           <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted/80">
             <Icon name="search" className="h-4 w-4" />
@@ -446,11 +468,14 @@ export default function Till() {
                 </p>
                 {lastOrder && (
                   <button
-                    onClick={() => void printPage()}
+                    onClick={() => void printReceipt(lastOrder)}
                     className="mt-4 w-full rounded-xl border border-line-strong py-2 text-sm font-medium transition hover:bg-brand-soft/50"
                   >
                     Print receipt
                   </button>
+                )}
+                {lastOrder && printProblem && (
+                  <p className="mt-2 text-xs text-red-700">{printProblem}</p>
                 )}
               </div>
             ) : (
@@ -744,11 +769,9 @@ export default function Till() {
         </div>
       )}
 
-      {lastOrder && (
-        <Receipt
-          order={lastOrder}
-          productNames={Object.fromEntries(products.map((p) => [p.id, p.name]))}
-        />
+      {lastOrder && <Receipt order={lastOrder} productNames={productNames} />}
+      {printerSettings && (
+        <PrinterSettings onClose={() => setPrinterSettings(false)} />
       )}
     </div>
   );

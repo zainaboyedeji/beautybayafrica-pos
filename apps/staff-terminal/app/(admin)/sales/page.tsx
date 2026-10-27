@@ -6,13 +6,17 @@ import { flushSync } from "react-dom";
 import type { Order, SaleChannel } from "@pos/types";
 import ConfirmDialog from "../../components/confirm-dialog";
 import Receipt from "../../components/receipt";
-import { printPage } from "../../lib/print";
+import { printOrderReceipt } from "../../lib/print";
+import PrinterSettings, {
+  useDesktopApp,
+} from "../../components/printer-settings";
 import ActionModals, {
   Notice,
   type ActionModal,
 } from "../../components/action-modals";
 import {
   PRIMARY_BUTTON,
+  SECONDARY_BUTTON,
   SELECT,
   TABLE,
   TABLE_CARD,
@@ -30,6 +34,7 @@ import {
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
 import PageHeader from "../../components/page-header";
+import Icon from "../../components/icons";
 
 const CHANNEL_FILTERS: Record<"" | SaleChannel, string> = {
   "": "Online and offline",
@@ -61,11 +66,18 @@ export default function SalesPage() {
   const [refunding, setRefunding] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [printing, setPrinting] = useState<Order | null>(null);
+  const desktopApp = useDesktopApp();
+  const [printerSettings, setPrinterSettings] = useState(false);
+
+  const productNames = Object.fromEntries(
+    (catalog.data?.products ?? []).map((p) => [p.id, p.name]),
+  );
 
   const printReceipt = async (order: Order) => {
+    setError(null);
     // Render this sale's receipt before the print dialog opens.
     flushSync(() => setPrinting(order));
-    await printPage();
+    setError(await printOrderReceipt(order, productNames, true));
   };
 
   // Puts the items back in stock and takes the sale out of every total.
@@ -125,6 +137,15 @@ export default function SalesPage() {
     <>
       <div className="mx-auto max-w-6xl print:hidden">
         <PageHeader icon="sales" section="Shop" title="Sales">
+          {desktopApp && (
+            <button
+              onClick={() => setPrinterSettings(true)}
+              className={SECONDARY_BUTTON}
+            >
+              <Icon name="printer" className="h-4 w-4" />
+              Printer
+            </button>
+          )}
           <button onClick={() => setModal("sale")} className={PRIMARY_BUTTON}>
             Record sale
           </button>
@@ -290,13 +311,10 @@ export default function SalesPage() {
         <Pagination pager={pager} label="sales" />
       </div>
       {printing && (
-        <Receipt
-          order={printing}
-          copy
-          productNames={Object.fromEntries(
-            (catalog.data?.products ?? []).map((p) => [p.id, p.name]),
-          )}
-        />
+        <Receipt order={printing} copy productNames={productNames} />
+      )}
+      {printerSettings && (
+        <PrinterSettings onClose={() => setPrinterSettings(false)} />
       )}
     </>
   );

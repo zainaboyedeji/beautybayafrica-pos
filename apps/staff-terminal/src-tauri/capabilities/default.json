@@ -13,6 +13,8 @@
   },
   "permissions": [
     "core:default",
-    "allow-print-receipt"
+    "allow-print-receipt",
+    "allow-list-printer-ports",
+    "allow-print-raw"
   ]
 }
