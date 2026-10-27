@@ -12,6 +12,7 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   login: "Logged in",
   login_failed: "Failed login",
   sale: "Sale",
+  sale_refunded: "Refund",
   product_added: "Product added",
   product_updated: "Product edited",
   inventory_imported: "CSV upload",
@@ -35,7 +36,7 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
 
 const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
   logins: { label: "Logins", actions: ["login", "login_failed"] },
-  sales: { label: "Sales", actions: ["sale"] },
+  sales: { label: "Sales", actions: ["sale", "sale_refunded"] },
   inventory: {
     label: "Inventory",
     actions: ["product_added", "product_updated", "inventory_imported"],
@@ -70,6 +71,7 @@ const ACTION_STYLES: Partial<Record<ActivityAction, string>> = {
   supplier_removed: "bg-red-100 text-red-800",
   expense_deleted: "bg-red-100 text-red-800",
   store_item_removed: "bg-red-100 text-red-800",
+  sale_refunded: "bg-red-100 text-red-800",
   sale: "bg-emerald-100 text-emerald-800",
   login: "bg-surface-alt text-muted",
 };

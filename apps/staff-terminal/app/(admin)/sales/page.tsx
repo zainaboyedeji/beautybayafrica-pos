@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Order, SaleChannel } from "@pos/types";
+import ConfirmDialog from "../../components/confirm-dialog";
 import ActionModals, {
   Notice,
   type ActionModal,
@@ -16,7 +17,14 @@ import {
 } from "../../components/form-styles";
 import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
-import { fetchCatalog, fetchOrders, money, useLoad } from "../../lib/api";
+import {
+  apiFetch,
+  describeError,
+  fetchCatalog,
+  fetchOrders,
+  money,
+  useLoad,
+} from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
 import PageHeader from "../../components/page-header";
 
@@ -47,6 +55,32 @@ export default function SalesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<"" | SaleChannel>("");
+  const [refunding, setRefunding] = useState<Order | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Puts the items back in stock and takes the sale out of every total.
+  const refund = async (order: Order, reason: string) => {
+    setError(null);
+    try {
+      const res = await apiFetch(`/orders/${order.id}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok)
+        throw new Error(
+          (await res.json().catch(() => null))?.error ?? "Could not refund the sale",
+        );
+      setNotice(
+        `Refunded ${money.format(order.total)} to ${order.customer.name}. The items are back in stock.`,
+      );
+      await Promise.all([orders.reload(), catalog.reload()]);
+    } catch (e) {
+      setError(describeError(e, "Could not refund the sale"));
+    } finally {
+      setRefunding(null);
+    }
+  };
 
   const productName = (id: string) =>
     catalog.data?.products.find((p) => p.id === id)?.name ?? "Removed product";
@@ -69,6 +103,7 @@ export default function SalesPage() {
             order.paymentMethod,
             order.soldBy?.name,
             itemsText(order),
+            order.refund ? "refunded" : undefined,
           ),
         )
     : null;
@@ -83,6 +118,18 @@ export default function SalesPage() {
         </button>
       </PageHeader>
       <Notice text={notice} />
+      {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+      {refunding && (
+        <ConfirmDialog
+          title="Refund sale"
+          message={`Refund ${money.format(refunding.total)} to ${refunding.customer.name}? The items go back into stock and the sale stops counting in your totals. Give the customer their money back yourself; this can't be undone.`}
+          confirmLabel="Refund sale"
+          withNote
+          danger
+          onConfirm={(reason) => refund(refunding, reason)}
+          onClose={() => setRefunding(null)}
+        />
+      )}
       <ActionModals
         open={modal}
         onClose={() => setModal(null)}
@@ -118,7 +165,10 @@ export default function SalesPage() {
       {visible && orders.data && (
         <p className="mt-3 text-sm text-muted">
           {visible.length} sale{visible.length === 1 ? "" : "s"} ·{" "}
-          {money.format(visible.reduce((sum, o) => sum + o.total, 0))}
+          {money.format(
+            visible.reduce((sum, o) => (o.refund ? sum : sum + o.total), 0),
+          )}
+          {visible.some((o) => o.refund) && " (refunds not counted)"}
         </p>
       )}
 
@@ -144,11 +194,17 @@ export default function SalesPage() {
                   <th className="px-4 py-3">Payment</th>
                   <th className="px-4 py-3">Sold by</th>
                   <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3">
+                    <span className="sr-only">Refund</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {pager.pageItems?.map((order) => (
-                  <tr key={order.id} className="align-top">
+                  <tr
+                    key={order.id}
+                    className={`align-top ${order.refund ? "text-muted" : ""}`}
+                  >
                     <td className="whitespace-nowrap px-4 py-3">
                       {new Date(order.createdAt).toLocaleString()}
                     </td>
@@ -180,7 +236,29 @@ export default function SalesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {money.format(order.total)}
+                      <span className={order.refund ? "line-through" : ""}>
+                        {money.format(order.total)}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {order.refund ? (
+                        <span
+                          title={
+                            `Refunded by ${order.refund.by} on ${new Date(order.refund.at).toLocaleString()}` +
+                            (order.refund.reason ? `: ${order.refund.reason}` : "")
+                          }
+                          className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800"
+                        >
+                          Refunded
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setRefunding(order)}
+                          className="font-medium text-red-700 hover:underline"
+                        >
+                          Refund
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -140,7 +140,8 @@ export default function Dashboard() {
     return <Loading />;
 
   const { products, stock } = catalog.data;
-  const sales = orders.data;
+  // Refunded sales count nowhere on the dashboard.
+  const sales = orders.data.filter((o) => !o.refund);
   const spent = expenses.data;
 
   const overview = periods(new Date()).map((p) => ({

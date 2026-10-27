@@ -135,6 +135,15 @@ export interface Order {
   /** Missing on sales made before sellers were recorded. */
   soldBy?: Seller;
   createdAt: string;
+  /** Set once the sale is refunded; it then counts in no totals. */
+  refund?: SaleRefund;
+}
+
+export interface SaleRefund {
+  at: string;
+  /** Who refunded it. */
+  by: string;
+  reason?: string;
 }
 
 /** Something done in the POS, for the admin's activity log. */
@@ -142,6 +151,7 @@ export type ActivityAction =
   | "login"
   | "login_failed"
   | "sale"
+  | "sale_refunded"
   | "product_added"
   | "product_updated"
   | "inventory_imported"

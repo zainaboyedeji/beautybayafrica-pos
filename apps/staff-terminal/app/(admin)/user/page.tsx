@@ -215,7 +215,18 @@ function UserSales({ user }: { user: string }) {
                 </td>
                 <td className="px-4 py-3 capitalize">{order.paymentMethod}</td>
                 <td className="px-4 py-3 text-right font-medium">
-                  {money.format(order.total)}
+                  {order.refund ? (
+                    <>
+                      <span className="text-muted line-through">
+                        {money.format(order.total)}
+                      </span>
+                      <span className="block text-xs font-medium text-red-700">
+                        Refunded
+                      </span>
+                    </>
+                  ) : (
+                    money.format(order.total)
+                  )}
                 </td>
               </tr>
             ))}

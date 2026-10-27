@@ -225,7 +225,10 @@ export type CustomerSummary = Customer & {
 
 const phoneKey = (phone: string) => phone.replace(/\s+/g, "");
 
-/** One row per saved customer, with totals from their sales (matched by phone). */
+/**
+ * One row per saved customer, with totals from their sales (matched by
+ * phone). Refunded sales don't count.
+ */
 export function summariseCustomers(
   customers: Customer[],
   orders: Order[],
@@ -233,7 +236,8 @@ export function summariseCustomers(
   return customers
     .map((customer) => {
       const theirs = orders.filter(
-        (o) => phoneKey(o.customer.phone) === phoneKey(customer.phone),
+        (o) =>
+          !o.refund && phoneKey(o.customer.phone) === phoneKey(customer.phone),
       );
       return {
         ...customer,

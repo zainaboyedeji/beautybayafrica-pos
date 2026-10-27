@@ -224,8 +224,10 @@ if (!ADMIN_PASSWORD) {
   console.error("ADMIN_PASSWORD is not set, so the admin cannot log in.");
 }
 // Without a fixed SESSION_SECRET everyone is logged out when the server restarts.
+// `||`, not `??`: an empty SESSION_SECRET= line would otherwise sign logins
+// with an empty key that anyone could use to make an admin login.
 const SESSION_SECRET =
-  process.env.SESSION_SECRET ?? randomBytes(32).toString("hex");
+  process.env.SESSION_SECRET || randomBytes(32).toString("hex");
 const SESSION_HOURS = 12;
 
 const fetchStaff = async () =>
@@ -1143,6 +1145,9 @@ app.get("/orders", adminOnly, async (req, res) => {
     sold_by_name: string | null;
     sold_by_staff_id: string | null;
     created_at: Date;
+    refunded_at: Date | null;
+    refunded_by_name: string | null;
+    refund_reason: string | null;
     items: OrderItem[];
   }>(
     `SELECT o.*, json_agg(json_strip_nulls(json_build_object(
@@ -1177,9 +1182,73 @@ app.get("/orders", adminOnly, async (req, res) => {
             }
           : {}),
         createdAt: row.created_at.toISOString(),
+        ...(row.refunded_at
+          ? {
+              refund: {
+                at: row.refunded_at.toISOString(),
+                by: row.refunded_by_name ?? "Admin",
+                ...(row.refund_reason ? { reason: row.refund_reason } : {}),
+              },
+            }
+          : {}),
       }),
     ),
   );
+});
+
+// Refunds a whole sale: it is marked refunded (and so leaves every total) and
+// its items go back into stock. A product or option removed since then just
+// doesn't get its stock back.
+app.post("/orders/:id/refund", adminOnly, async (req, res) => {
+  const reason = optionalText(req.body?.reason);
+  const session = sessionOf(res);
+  const order = await transaction(async (client) => {
+    // Locks the sale, so a double click can't refund it twice.
+    const { rows } = await client.query<{
+      total: number;
+      customer_name: string;
+      created_at: Date;
+    }>(
+      `UPDATE orders SET refunded_at = now(), refunded_by_name = $2, refund_reason = $3
+       WHERE id = $1 AND refunded_at IS NULL
+       RETURNING total, customer_name, created_at`,
+      [req.params.id, session.name, reason],
+    );
+    if (!rows[0]) {
+      const { rowCount } = await client.query("SELECT 1 FROM orders WHERE id = $1", [
+        req.params.id,
+      ]);
+      throw rowCount
+        ? new HttpError(409, "This sale has already been refunded")
+        : new HttpError(404, "Sale not found");
+    }
+    const { rows: items } = await client.query<{
+      product_id: string;
+      variant_id: string | null;
+      quantity: number;
+    }>("SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1", [
+      req.params.id,
+    ]);
+    for (const item of items) {
+      await client.query(
+        item.variant_id
+          ? `UPDATE product_variants SET quantity = quantity + $2, updated_at = now()
+             WHERE id = $1`
+          : `UPDATE products SET quantity = quantity + $2, updated_at = now()
+             WHERE id = $1`,
+        [item.variant_id ?? item.product_id, item.quantity],
+      );
+    }
+    return rows[0];
+  });
+  await logBy(
+    res,
+    "sale_refunded",
+    `Refunded ${naira.format(order.total)} to ${order.customer_name} ` +
+      `(sale of ${order.created_at.toLocaleDateString("en-NG", { timeZone: "Africa/Lagos" })})` +
+      (reason ? `: ${reason}` : ""),
+  );
+  res.json({ ok: true });
 });
 
 /** Takes `quantity` of one option out of stock and returns its sale line. */
@@ -1823,7 +1892,7 @@ app.get("/users", adminOnly, async (_req, res) => {
       `SELECT CASE WHEN sold_by_role = 'admin' THEN 'admin' ELSE sold_by_staff_id END AS uid,
          (array_agg(sold_by_name ORDER BY created_at DESC))[1] AS name,
          count(*)::int AS sales, sum(total) AS total
-       FROM orders WHERE sold_by_role IS NOT NULL
+       FROM orders WHERE sold_by_role IS NOT NULL AND refunded_at IS NULL
        GROUP BY 1`,
     ),
   ]);
