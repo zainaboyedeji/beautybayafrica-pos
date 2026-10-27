@@ -317,7 +317,7 @@ export default function AddProductForm({
         <img
           src={form.imageUrl.trim()}
           alt="Product image preview"
-          className="col-span-2 h-32 w-32 rounded-lg border border-line object-cover"
+          className="col-span-2 h-32 w-32 rounded-xl border border-line object-cover"
         />
       )}
 
@@ -345,7 +345,7 @@ export default function AddProductForm({
         </select>
       </label>
       {form.supplierId === NEW_SUPPLIER && (
-        <div className="col-span-2 grid grid-cols-2 gap-3 rounded-lg border border-line bg-surface-alt/50 p-3">
+        <div className="col-span-2 grid grid-cols-2 gap-3 rounded-xl border border-line bg-surface-alt/50 p-3">
           <label className="text-sm font-medium">
             Supplier name
             <input
@@ -395,7 +395,7 @@ export default function AddProductForm({
           {options.map((option, index) => (
             <fieldset
               key={option.id ?? `new-${index}`}
-              className="grid grid-cols-4 gap-3 rounded-lg border border-line p-3"
+              className="grid grid-cols-4 gap-3 rounded-xl border border-line p-3"
             >
               <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">
                 Option {index + 1}

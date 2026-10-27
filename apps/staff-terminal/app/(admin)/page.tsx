@@ -6,7 +6,8 @@ import ActionModals, {
   Notice,
   type ActionModal,
 } from "../components/action-modals";
-import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../components/form-styles";
+import { CARD, THEAD } from "../components/form-styles";
+import Icon, { type IconName } from "../components/icons";
 import type { Expense, Order } from "@pos/types";
 import {
   fetchCatalog,
@@ -17,20 +18,39 @@ import {
   sellables,
   useLoad,
 } from "../lib/api";
+import { useSession } from "../lib/auth";
 import { LoadError, Loading } from "../lib/status";
 
 const LOW_STOCK = 5;
 
-const MODAL_ACTIONS: { modal: ActionModal; label: string }[] = [
-  { modal: "product", label: "Add product" },
-  { modal: "sale", label: "Record a sale" },
-  { modal: "customer", label: "Add customer" },
+const MODAL_ACTIONS: { modal: ActionModal; label: string; icon: IconName }[] =
+  [
+    { modal: "product", label: "Add product", icon: "plus" },
+    { modal: "sale", label: "Record a sale", icon: "sales" },
+    { modal: "customer", label: "Add customer", icon: "customers" },
+  ];
+
+const LINK_ACTIONS: { href: string; label: string; icon: IconName }[] = [
+  { href: "/inventory", label: "Upload inventory", icon: "upload" },
 ];
 
-const LINK_ACTIONS = [
-  { href: "/pos", label: "Sell products" },
-  { href: "/inventory", label: "Upload inventory" },
-];
+// Each figure has its own tint, so the tiles read at a glance.
+const TINTS = {
+  pink: "bg-brand-soft text-brand-deep",
+  violet: "bg-violet-100 text-violet-700",
+  green: "bg-emerald-100 text-emerald-800",
+  amber: "bg-amber-100 text-amber-800",
+};
+
+/** "Good morning" and so on, by this computer's clock. */
+function greeting(now: Date) {
+  const hour = now.getHours();
+  return hour < 12
+    ? "Good morning"
+    : hour < 17
+      ? "Good afternoon"
+      : "Good evening";
+}
 
 const DAY = 86_400_000;
 
@@ -112,6 +132,7 @@ export default function Dashboard() {
   const expenses = useLoad(fetchExpenses);
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const session = useSession(["admin"]);
 
   if (catalog.failed || orders.failed || customers.failed || expenses.failed)
     return <LoadError />;
@@ -132,21 +153,29 @@ export default function Dashboard() {
       label: "Sales today",
       value: money.format(today.revenue),
       note: change(today.revenue, yesterday.revenue),
+      icon: "coins" as IconName,
+      tint: TINTS.pink,
     },
     {
       label: "Number of sales",
       value: String(today.sales),
       note: `${today.items} item${today.items === 1 ? "" : "s"} sold`,
+      icon: "sales" as IconName,
+      tint: TINTS.violet,
     },
     {
       label: "Gross profit today",
       value: money.format(today.profit),
       note: change(today.profit, yesterday.profit),
+      icon: "trend" as IconName,
+      tint: TINTS.green,
     },
     {
       label: "Spent today",
       value: money.format(today.expenses),
       note: `Net ${money.format(today.profit - today.expenses)}`,
+      icon: "expenses" as IconName,
+      tint: TINTS.amber,
     },
   ];
 
@@ -169,13 +198,27 @@ export default function Dashboard() {
     0,
   );
   const uncosted = inStock.length - costed.length;
+  // Each tile has a thin coloured edge along its top.
   const inventoryTiles = [
-    { label: "Units in stock", value: units.toLocaleString() },
-    { label: "Stock value (selling price)", value: money.format(atPrice) },
-    { label: "Stock value (cost price)", value: money.format(atCost) },
+    {
+      label: "Units in stock",
+      value: units.toLocaleString(),
+      accent: "from-violet-300 to-brand",
+    },
+    {
+      label: "Stock value (selling price)",
+      value: money.format(atPrice),
+      accent: "from-brand to-brand-deep",
+    },
+    {
+      label: "Stock value (cost price)",
+      value: money.format(atCost),
+      accent: "from-violet-400 to-brand",
+    },
     {
       label: "Profit if it all sells",
       value: money.format(costedAtPrice - atCost),
+      accent: "from-emerald-400 to-emerald-600",
     },
   ];
 
@@ -184,33 +227,103 @@ export default function Dashboard() {
     .flatMap(sellables)
     .filter((s) => (stock[s.key] ?? 0) <= LOW_STOCK);
 
+  const now = new Date();
+
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-3xl font-semibold">Dashboard</h1>
-
-      <h2 className="mt-8 font-sans text-sm font-medium text-muted">
-        Quick actions
-      </h2>
-      <div className="mt-3 flex flex-wrap gap-3">
-        {MODAL_ACTIONS.map((action) => (
-          <button
-            key={action.label}
-            onClick={() => setModal(action.modal)}
-            className={
-              action.modal === "product" ? PRIMARY_BUTTON : SECONDARY_BUTTON
-            }
-          >
-            {action.label}
-          </button>
-        ))}
-        {LINK_ACTIONS.map((action) => (
+      {/* The pink hero: who's here, today's date, and the everyday actions. */}
+      <section className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-brand-deep via-brand-hover to-brand px-8 pb-20 pt-8 text-white shadow-2xl shadow-brand/30">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-20 -top-28 h-80 w-80 animate-drift rounded-full bg-white/25 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-32 right-40 h-72 w-72 rounded-full bg-violet-300/25 blur-3xl"
+        />
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80">
+              {now.toLocaleDateString("en-NG", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}
+            </p>
+            <h1 className="mt-2 text-4xl font-semibold">
+              {greeting(now)},{" "}
+              <span className="italic text-brand-soft">
+                {session?.name.split(" ")[0] ?? "there"}
+              </span>
+            </h1>
+            <p className="mt-2 max-w-md text-sm text-white/85">
+              {today.sales === 0
+                ? "No sales yet today. The till is ready when you are."
+                : `${today.sales} sale${today.sales === 1 ? "" : "s"} so far today, ${money.format(today.revenue)} taken.`}
+            </p>
+          </div>
           <Link
-            key={action.label}
-            href={action.href}
-            className={SECONDARY_BUTTON}
+            href="/pos"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-brand-deep shadow-lg shadow-brand-deep/25 transition hover:-translate-y-px"
           >
-            {action.label}
+            <Icon name="sell" />
+            Open the till
           </Link>
+        </div>
+        <div className="relative mt-6 flex flex-wrap gap-2">
+          {MODAL_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              onClick={() => setModal(action.modal)}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-ink shadow-sm transition hover:-translate-y-px hover:shadow-md"
+            >
+              <Icon name={action.icon} className="h-4 w-4 text-brand-deep" />
+              {action.label}
+            </button>
+          ))}
+          {LINK_ACTIONS.map((action) => (
+            <Link
+              key={action.label}
+              href={action.href}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-ink shadow-sm transition hover:-translate-y-px hover:shadow-md"
+            >
+              <Icon name={action.icon} className="h-4 w-4 text-brand-deep" />
+              {action.label}
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Today's figures, tucked over the hero's bottom edge. */}
+      <div className="relative -mt-12 grid grid-cols-2 gap-4 px-4 lg:grid-cols-4">
+        {todayTiles.map((tile) => (
+          <div
+            key={tile.label}
+            className={`${CARD} transition hover:-translate-y-0.5`}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted">{tile.label}</p>
+              <span
+                className={`flex h-9 w-9 items-center justify-center rounded-xl ${tile.tint}`}
+              >
+                <Icon name={tile.icon} className="h-4 w-4" />
+              </span>
+            </div>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">
+              {tile.value}
+            </p>
+            <p
+              className={`mt-1 text-xs ${
+                tile.note.startsWith("+")
+                  ? "font-medium text-emerald-700"
+                  : tile.note.startsWith("-")
+                    ? "font-medium text-red-700"
+                    : "text-muted"
+              }`}
+            >
+              {tile.note}
+            </p>
+          </div>
         ))}
       </div>
 
@@ -228,33 +341,10 @@ export default function Dashboard() {
         }}
       />
 
-      <h2 className="mt-10 font-sans text-sm font-medium text-muted">
-        Today ·{" "}
-        {new Date().toLocaleDateString("en-NG", {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-        })}
-      </h2>
-      <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {todayTiles.map((tile) => (
-          <div
-            key={tile.label}
-            className="rounded-lg border-l-4 border-brand bg-white p-5 shadow-sm"
-          >
-            <p className="text-sm text-muted">{tile.label}</p>
-            <p className="mt-1 text-2xl font-semibold">{tile.value}</p>
-            <p className="mt-1 text-xs text-muted">{tile.note}</p>
-          </div>
-        ))}
-      </div>
-
-      <h2 className="mt-10 font-sans text-sm font-medium text-muted">
-        Sales overview
-      </h2>
-      <div className="mt-3 overflow-x-auto rounded-lg bg-white shadow-sm">
+      <SectionTitle title="Sales overview" />
+      <div className="mt-3 overflow-x-auto rounded-2xl bg-white shadow-soft ring-1 ring-line">
         <table className="w-full text-left text-sm">
-          <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
+          <thead className={THEAD}>
             <tr>
               <th className="px-4 py-3">Period</th>
               <th className="px-4 py-3 text-right">Sales</th>
@@ -273,7 +363,9 @@ export default function Dashboard() {
                 <tr
                   key={row.label}
                   className={
-                    row.label === "All time" ? "bg-surface-alt/60" : undefined
+                    row.label === "All time"
+                      ? "bg-brand-soft/30 font-medium"
+                      : undefined
                   }
                 >
                   <td className="whitespace-nowrap px-4 py-3 font-medium">
@@ -293,12 +385,18 @@ export default function Dashboard() {
                   <td className="whitespace-nowrap px-4 py-3 text-right">
                     {money.format(row.expenses)}
                   </td>
-                  <td
-                    className={`whitespace-nowrap px-4 py-3 text-right font-medium ${
-                      net < 0 ? "text-red-700" : ""
-                    }`}
-                  >
-                    {money.format(net)}
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-semibold ${
+                        net < 0
+                          ? "bg-red-50 text-red-700"
+                          : net > 0
+                            ? "bg-emerald-50 text-emerald-800"
+                            : ""
+                      }`}
+                    >
+                      {money.format(net)}
+                    </span>
                   </td>
                 </tr>
               );
@@ -311,18 +409,21 @@ export default function Dashboard() {
         Net is gross profit minus expenses. Weeks start on Monday.
       </p>
 
-      <h2 className="mt-10 font-sans text-sm font-medium text-muted">
-        Inventory value · {products.length} products, {customers.data.length}{" "}
-        customers
-      </h2>
+      <SectionTitle
+        title="Inventory value"
+        detail={`${products.length} products · ${customers.data.length} customers`}
+      />
       <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {inventoryTiles.map((tile) => (
-          <div
-            key={tile.label}
-            className="rounded-lg border-l-4 border-ink bg-white p-5 shadow-sm"
-          >
+          <div key={tile.label} className={`${CARD} relative overflow-hidden`}>
+            <span
+              aria-hidden
+              className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${tile.accent}`}
+            />
             <p className="text-sm text-muted">{tile.label}</p>
-            <p className="mt-1 text-2xl font-semibold">{tile.value}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">
+              {tile.value}
+            </p>
           </div>
         ))}
       </div>
@@ -340,8 +441,16 @@ export default function Dashboard() {
       )}
 
       <div className="mt-10 grid gap-6 lg:grid-cols-2">
-        <section className="rounded-lg bg-white p-5 shadow-sm">
-          <h2 className="font-semibold">Recent sales</h2>
+        <section className={CARD}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Recent sales</h2>
+            <Link
+              href="/sales"
+              className="text-sm font-medium text-brand-deep hover:underline"
+            >
+              All sales →
+            </Link>
+          </div>
           {sales.length === 0 ? (
             <p className="mt-3 text-sm text-muted">No sales recorded yet.</p>
           ) : (
@@ -350,14 +459,19 @@ export default function Dashboard() {
                 .slice(-5)
                 .reverse()
                 .map((order) => (
-                  <li key={order.id} className="flex justify-between py-2">
-                    <span>
-                      {order.customer.name}
-                      <span className="ml-2 text-muted">
+                  <li key={order.id} className="flex items-center gap-3 py-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft to-violet-100 text-xs font-semibold text-brand-deep">
+                      {initials(order.customer.name)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">
+                        {order.customer.name}
+                      </span>
+                      <span className="block text-xs text-muted">
                         {new Date(order.createdAt).toLocaleString()}
                       </span>
                     </span>
-                    <span className="font-medium">
+                    <span className="font-semibold tabular-nums">
                       {money.format(order.total)}
                     </span>
                   </li>
@@ -366,20 +480,43 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="rounded-lg bg-white p-5 shadow-sm">
-          <h2 className="font-semibold">
-            Low stock ({LOW_STOCK} or fewer left)
-          </h2>
+        <section className={CARD}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Low stock</h2>
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+              {LOW_STOCK} or fewer left
+            </span>
+          </div>
           {lowStock.length === 0 ? (
             <p className="mt-3 text-sm text-muted">Nothing is running low.</p>
           ) : (
             <ul className="mt-3 divide-y divide-line text-sm">
-              {lowStock.slice(0, 8).map((s) => (
-                <li key={s.key} className="flex justify-between py-2">
-                  <span>{s.name}</span>
-                  <span className="font-medium">{stock[s.key] ?? 0} left</span>
-                </li>
-              ))}
+              {lowStock.slice(0, 8).map((s) => {
+                const left = stock[s.key] ?? 0;
+                return (
+                  <li key={s.key} className="flex items-center gap-3 py-2.5">
+                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                    {/* How close to empty, out of LOW_STOCK. */}
+                    <span className="h-1.5 w-16 overflow-hidden rounded-full bg-line">
+                      <span
+                        className={`block h-full rounded-full ${
+                          left <= 0 ? "bg-red-500" : "bg-amber-400"
+                        }`}
+                        style={{
+                          width: `${Math.max(8, (Math.max(0, left) / LOW_STOCK) * 100)}%`,
+                        }}
+                      />
+                    </span>
+                    <span
+                      className={`w-14 text-right font-medium ${
+                        left <= 0 ? "text-red-700" : ""
+                      }`}
+                    >
+                      {left <= 0 ? "Out" : `${left} left`}
+                    </span>
+                  </li>
+                );
+              })}
               {lowStock.length > 8 && (
                 <li className="py-2 text-muted">
                   …and {lowStock.length - 8} more
@@ -392,3 +529,20 @@ export default function Dashboard() {
     </div>
   );
 }
+
+function SectionTitle({ title, detail }: { title: string; detail?: string }) {
+  return (
+    <div className="mt-10 flex items-baseline gap-3">
+      <h2 className="text-2xl font-semibold">{title}</h2>
+      {detail && <span className="text-sm text-muted">{detail}</span>}
+    </div>
+  );
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");

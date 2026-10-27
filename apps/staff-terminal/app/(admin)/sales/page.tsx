@@ -7,11 +7,18 @@ import ActionModals, {
   Notice,
   type ActionModal,
 } from "../../components/action-modals";
-import { PRIMARY_BUTTON } from "../../components/form-styles";
+import {
+  PRIMARY_BUTTON,
+  SELECT,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
+} from "../../components/form-styles";
 import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import { fetchCatalog, fetchOrders, money, useLoad } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 const CHANNEL_FILTERS: Record<"" | SaleChannel, string> = {
   "": "Online and offline",
@@ -70,12 +77,11 @@ export default function SalesPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Sales</h1>
+      <PageHeader icon="sales" section="Shop" title="Sales">
         <button onClick={() => setModal("sale")} className={PRIMARY_BUTTON}>
           Record sale
         </button>
-      </div>
+      </PageHeader>
       <Notice text={notice} />
       <ActionModals
         open={modal}
@@ -100,7 +106,7 @@ export default function SalesPage() {
           aria-label="Online or offline"
           value={channel}
           onChange={(e) => setChannel(e.target.value as "" | SaleChannel)}
-          className="rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+          className={SELECT}
         >
           {Object.entries(CHANNEL_FILTERS).map(([value, label]) => (
             <option key={value} value={value}>
@@ -126,59 +132,61 @@ export default function SalesPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Items</th>
-                <th className="px-4 py-3">Channel</th>
-                <th className="px-4 py-3">Payment</th>
-                <th className="px-4 py-3">Sold by</th>
-                <th className="px-4 py-3 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((order) => (
-                <tr key={order.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {new Date(order.createdAt).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 font-medium">
-                    {order.customer.name}
-                  </td>
-                  <td className="px-4 py-3">{order.customer.phone}</td>
-                  <td className="px-4 py-3">{itemsText(order)}</td>
-                  <td className="px-4 py-3">
-                    <ChannelBadge channel={order.channel} />
-                  </td>
-                  <td className="px-4 py-3 capitalize">
-                    {order.paymentMethod}
-                  </td>
-                  <td className="px-4 py-3">
-                    {order.soldBy ? (
-                      <Link
-                        href={`/user?id=${encodeURIComponent(
-                          order.soldBy.role === "admin"
-                            ? "admin"
-                            : (order.soldBy.staffId ?? ""),
-                        )}`}
-                        className="hover:text-brand-deep hover:underline"
-                      >
-                        {order.soldBy.name}
-                      </Link>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium">
-                    {money.format(order.total)}
-                  </td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Phone</th>
+                  <th className="px-4 py-3">Items</th>
+                  <th className="px-4 py-3">Channel</th>
+                  <th className="px-4 py-3">Payment</th>
+                  <th className="px-4 py-3">Sold by</th>
+                  <th className="px-4 py-3 text-right">Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((order) => (
+                  <tr key={order.id} className="align-top">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {new Date(order.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 font-medium">
+                      {order.customer.name}
+                    </td>
+                    <td className="px-4 py-3">{order.customer.phone}</td>
+                    <td className="px-4 py-3">{itemsText(order)}</td>
+                    <td className="px-4 py-3">
+                      <ChannelBadge channel={order.channel} />
+                    </td>
+                    <td className="px-4 py-3 capitalize">
+                      {order.paymentMethod}
+                    </td>
+                    <td className="px-4 py-3">
+                      {order.soldBy ? (
+                        <Link
+                          href={`/user?id=${encodeURIComponent(
+                            order.soldBy.role === "admin"
+                              ? "admin"
+                              : (order.soldBy.staffId ?? ""),
+                          )}`}
+                          className="hover:text-brand-deep hover:underline"
+                        >
+                          {order.soldBy.name}
+                        </Link>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium">
+                      {money.format(order.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="sales" />

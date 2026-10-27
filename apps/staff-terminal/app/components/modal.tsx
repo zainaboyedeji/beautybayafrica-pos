@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   title: string;
@@ -18,9 +19,12 @@ export default function Modal({ title, onClose, children, wide }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // Rendered on <body>: the page's fade-in animation uses a transform, which
+  // would otherwise pin this "fixed" overlay to the page area and crop it.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-6 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -29,22 +33,24 @@ export default function Modal({ title, onClose, children, wide }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`max-h-full w-full overflow-auto rounded-2xl bg-white p-6 text-ink shadow-2xl ring-1 ring-line ${
+        className={`max-h-full w-full animate-pop-in overflow-auto rounded-2xl bg-white text-ink shadow-2xl ring-1 ring-line ${
           wide ? "max-w-3xl" : "max-w-md"
         }`}
       >
-        <div className="flex items-center justify-between">
+        {/* A soft pink header band. */}
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-gradient-to-r from-surface-alt to-brand-soft/50 px-6 py-4">
           <h2 className="text-xl font-semibold">{title}</h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md px-2 py-1 text-xl leading-none text-muted hover:bg-brand-soft"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-xl leading-none text-muted transition hover:bg-white hover:text-brand-deep"
           >
             ×
           </button>
         </div>
-        <div className="mt-4">{children}</div>
+        <div className="p-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -2,6 +2,7 @@
 
 import AddCustomerForm from "./add-customer-form";
 import AddProductForm from "./add-product-form";
+import Icon from "./icons";
 import Modal from "./modal";
 import RecordSaleForm from "./record-sale-form";
 
@@ -42,8 +43,11 @@ export function Notice({ text }: { text: string | null }) {
   return (
     <p
       role="status"
-      className="mt-4 rounded-lg bg-emerald-100 px-4 py-3 text-sm text-emerald-800"
+      className="mt-5 flex animate-pop-in items-center gap-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 ring-1 ring-emerald-100"
     >
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+        <Icon name="check" className="h-3.5 w-3.5" />
+      </span>
       {text}
     </p>
   );

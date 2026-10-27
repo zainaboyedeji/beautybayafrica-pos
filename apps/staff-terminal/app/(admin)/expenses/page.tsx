@@ -4,9 +4,14 @@ import { useState } from "react";
 import type { Expense, ExpensePaymentMethod } from "@pos/types";
 import { Notice } from "../../components/action-modals";
 import {
+  CARD,
   INPUT,
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
+  SELECT,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
 } from "../../components/form-styles";
 import ConfirmDialog from "../../components/confirm-dialog";
 import Modal from "../../components/modal";
@@ -21,6 +26,7 @@ import {
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 const CATEGORIES = [
   "Stock purchase",
@@ -99,12 +105,11 @@ export default function ExpensesPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Expenses</h1>
+      <PageHeader icon="expenses" section="Money" title="Expenses">
         <button onClick={() => setAdding(true)} className={PRIMARY_BUTTON}>
           Record expense
         </button>
-      </div>
+      </PageHeader>
       <Notice text={notice} />
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       {deleting && (
@@ -131,13 +136,13 @@ export default function ExpensesPage() {
       )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg bg-white p-5 shadow-sm">
+        <div className={CARD}>
           <p className="text-sm text-muted">Spent this month</p>
           <p className="mt-1 text-2xl font-semibold">
             {money.format(monthTotal)}
           </p>
         </div>
-        <div className="rounded-lg bg-white p-5 shadow-sm">
+        <div className={CARD}>
           <p className="text-sm text-muted">
             Total of the expenses listed below
           </p>
@@ -159,7 +164,7 @@ export default function ExpensesPage() {
           aria-label="Category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+          className={SELECT}
         >
           <option value="">All categories</option>
           {CATEGORIES.map((c) => (
@@ -178,52 +183,54 @@ export default function ExpensesPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Supplier</th>
-                <th className="px-4 py-3">Paid by</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((e) => (
-                <tr key={e.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {formatDay(e.spentOn)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-medium">{e.description}</span>
-                    {e.notes && (
-                      <p className="mt-0.5 whitespace-pre-line text-muted">
-                        {e.notes}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{e.category}</td>
-                  <td className="px-4 py-3">{e.supplierName ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    {PAYMENT_LABELS[e.paymentMethod]}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium">
-                    {money.format(e.amount)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setDeleting(e)}
-                      className="font-medium text-red-700 hover:underline"
-                    >
-                      Delete
-                    </button>
-                  </td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Supplier</th>
+                  <th className="px-4 py-3">Paid by</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((e) => (
+                  <tr key={e.id} className="align-top">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {formatDay(e.spentOn)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-medium">{e.description}</span>
+                      {e.notes && (
+                        <p className="mt-0.5 whitespace-pre-line text-muted">
+                          {e.notes}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">{e.category}</td>
+                    <td className="px-4 py-3">{e.supplierName ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      {PAYMENT_LABELS[e.paymentMethod]}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium">
+                      {money.format(e.amount)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setDeleting(e)}
+                        className="font-medium text-red-700 hover:underline"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="expenses" />

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Notice } from "../../components/action-modals";
 import ConfirmDialog from "../../components/confirm-dialog";
 import {
+  CARD,
   INPUT,
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
@@ -19,6 +20,7 @@ import {
   type StaffMember,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 // Suggestions for the role box; any other role can be typed in.
 const ROLES = [
@@ -90,11 +92,17 @@ export default function StaffPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-3xl font-semibold">Staff</h1>
-      <p className="mt-1 text-sm text-muted">
-        Staff log in with their PIN. They can only use the till and the Requests
-        page; they cannot see sales, customers, expenses or change inventory.
-      </p>
+      <PageHeader
+        icon="staff"
+        section="Team"
+        title="Staff"
+        description={
+          <>
+            Staff log in with their PIN. They can only use the till and the Requests
+            page; they cannot see sales, customers, expenses or change inventory.
+          </>
+        }
+      />
       <Notice text={notice} />
       <RoleOptions />
       {removing && (
@@ -133,7 +141,7 @@ export default function StaffPage() {
       )}
 
       <form
-        className="mt-6 flex flex-wrap items-end gap-3 rounded-lg bg-white p-5 shadow-sm"
+        className={`${CARD} mt-6 flex flex-wrap items-end gap-3`}
         onSubmit={(e) => {
           e.preventDefault();
           void add();
@@ -195,7 +203,7 @@ export default function StaffPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <ul className="divide-y divide-line rounded-lg bg-white shadow-sm">
+          <ul className="divide-y divide-line overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-line">
             {visible.map((s) => (
               <li
                 key={s.id}

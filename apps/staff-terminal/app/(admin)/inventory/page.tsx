@@ -10,7 +10,14 @@ import AddProductForm from "../../components/add-product-form";
 import Modal from "../../components/modal";
 import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
-import { PRIMARY_BUTTON } from "../../components/form-styles";
+import {
+  CARD,
+  PRIMARY_BUTTON,
+  SELECT,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
+} from "../../components/form-styles";
 import {
   apiFetch,
   categoryList,
@@ -21,6 +28,7 @@ import {
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 type ImportResult = {
   added: number;
@@ -54,8 +62,6 @@ const TYPE_FILTERS = {
   single: "Without options",
 } as const;
 
-const SELECT =
-  "rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand";
 
 export default function InventoryPage() {
   const catalog = useLoad(fetchCatalog);
@@ -177,12 +183,11 @@ export default function InventoryPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Inventory</h1>
+      <PageHeader icon="inventory" section="Shop" title="Inventory">
         <button onClick={() => setModal("product")} className={PRIMARY_BUTTON}>
           Add product
         </button>
-      </div>
+      </PageHeader>
       <Notice text={notice} />
       <ActionModals
         open={modal}
@@ -209,24 +214,24 @@ export default function InventoryPage() {
       )}
 
       <div className="mt-6">
-        <section className="rounded-lg bg-white p-5 shadow-sm">
+        <section className={CARD}>
           <h2 className="font-semibold">Upload many products</h2>
           <p className="mt-1 text-sm text-muted">
             Upload a CSV file with the columns{" "}
-            <code className="rounded bg-surface-alt px-1">sku</code>,{" "}
-            <code className="rounded bg-surface-alt px-1">name</code>,{" "}
-            <code className="rounded bg-surface-alt px-1">price</code> and{" "}
-            <code className="rounded bg-surface-alt px-1">quantity</code>, plus
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">sku</code>,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">name</code>,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">price</code> and{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">quantity</code>, plus
             an optional{" "}
-            <code className="rounded bg-surface-alt px-1">barcode</code>,{" "}
-            <code className="rounded bg-surface-alt px-1">category</code>,{" "}
-            <code className="rounded bg-surface-alt px-1">cost_price</code> and{" "}
-            <code className="rounded bg-surface-alt px-1">image_url</code>{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">barcode</code>,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">category</code>,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">cost_price</code> and{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">image_url</code>{" "}
             (Cloudinary link). Products are matched by SKU: existing ones are
             updated, new ones are added.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <label className="cursor-pointer rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-brand-hover">
+            <label className={`${PRIMARY_BUTTON} cursor-pointer`}>
               {uploading ? "Uploading…" : "Choose CSV file"}
               <input
                 type="file"
@@ -398,145 +403,147 @@ export default function InventoryPage() {
         ) : products.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="w-12 px-4 py-3 text-right">#</th>
-                <th className="px-4 py-3">Image</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">Barcode</th>
-                <th className="px-4 py-3 text-right">Cost price</th>
-                <th className="px-4 py-3 text-right">Price</th>
-                <th className="px-4 py-3 text-right">Margin</th>
-                <th className="px-4 py-3 text-right">In stock</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((p, index) => {
-                const prices = p.variants?.map((v) => v.price) ?? [];
-                const expanded = !!p.variants && isOpen(p);
-                const level = stockLevel(p);
-                return (
-                  <Fragment key={p.id}>
-                    <tr className={expanded ? "bg-brand-soft/30" : undefined}>
-                      <td className="px-4 py-3 text-right text-muted tabular-nums">
-                        {pager.start + index + 1}
-                      </td>
-                      <td className="px-4 py-2">
-                        {p.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={p.imageUrl}
-                            alt=""
-                            className="h-10 w-10 rounded-md object-cover"
-                          />
-                        ) : (
-                          <div className="h-10 w-10 rounded-md bg-surface-alt" />
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="w-12 px-4 py-3 text-right">#</th>
+                  <th className="px-4 py-3">Image</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">SKU</th>
+                  <th className="px-4 py-3">Barcode</th>
+                  <th className="px-4 py-3 text-right">Cost price</th>
+                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="px-4 py-3 text-right">Margin</th>
+                  <th className="px-4 py-3 text-right">In stock</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((p, index) => {
+                  const prices = p.variants?.map((v) => v.price) ?? [];
+                  const expanded = !!p.variants && isOpen(p);
+                  const level = stockLevel(p);
+                  return (
+                    <Fragment key={p.id}>
+                      <tr className={expanded ? "bg-brand-soft/30" : undefined}>
+                        <td className="px-4 py-3 text-right text-muted tabular-nums">
+                          {pager.start + index + 1}
+                        </td>
+                        <td className="px-4 py-2">
+                          {p.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={p.imageUrl}
+                              alt=""
+                              className="h-10 w-10 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-lg bg-surface-alt" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {p.variants ? (
+                            <button
+                              onClick={() => toggle(p.id)}
+                              aria-expanded={expanded}
+                              className="group flex items-start gap-2 text-left"
+                            >
+                              <span
+                                aria-hidden
+                                className={`mt-0.5 inline-block text-xs text-brand-deep transition-transform ${
+                                  expanded ? "rotate-90" : ""
+                                }`}
+                              >
+                                ▶
+                              </span>
+                              <span>
+                                <span className="font-medium group-hover:text-brand-deep">
+                                  {p.name}
+                                </span>
+                                <span className="ml-2 whitespace-nowrap rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                                  {p.variants.length} options
+                                </span>
+                                <ProductDetails product={p} />
+                              </span>
+                            </button>
+                          ) : (
+                            <>
+                              <span className="font-medium">{p.name}</span>
+                              <ProductDetails product={p} />
+                            </>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted">{p.sku}</td>
+                        <td className="px-4 py-3 text-muted">
+                          {p.barcode ?? "—"}
+                        </td>
                         {p.variants ? (
+                          <>
+                            <td className="px-4 py-3 text-right">—</td>
+                            <td className="whitespace-nowrap px-4 py-3 text-right">
+                              {Math.min(...prices) === Math.max(...prices)
+                                ? money.format(prices[0])
+                                : `${money.format(Math.min(...prices))} – ${money.format(Math.max(...prices))}`}
+                            </td>
+                            <td className="px-4 py-3 text-right">—</td>
+                          </>
+                        ) : (
+                          <PriceCells item={p} />
+                        )}
+                        <td
+                          className={`px-4 py-3 text-right tabular-nums ${
+                            level === "out"
+                              ? "font-medium text-red-700"
+                              : level === "low"
+                                ? "font-medium text-amber-700"
+                                : ""
+                          }`}
+                        >
+                          {stock[p.id] ?? 0}
+                        </td>
+                        <td className="px-4 py-3 text-right">
                           <button
-                            onClick={() => toggle(p.id)}
-                            aria-expanded={expanded}
-                            className="group flex items-start gap-2 text-left"
+                            onClick={() => setEditing(p)}
+                            className="font-medium text-brand-deep hover:underline"
                           >
-                            <span
-                              aria-hidden
-                              className={`mt-0.5 inline-block text-xs text-brand-deep transition-transform ${
-                                expanded ? "rotate-90" : ""
+                            Edit
+                          </button>
+                        </td>
+                      </tr>
+                      {expanded &&
+                        p.variants?.map((v) => (
+                          <tr key={v.id} className="bg-surface-alt/60">
+                            <td />
+                            <td />
+                            <td className="px-4 py-2 pl-10">
+                              <span className="text-muted">↳</span> {v.name}
+                            </td>
+                            <td className="px-4 py-2 text-muted">{v.sku}</td>
+                            <td className="px-4 py-2 text-muted">
+                              {v.barcode ?? "—"}
+                            </td>
+                            <PriceCells item={v} />
+                            <td
+                              className={`px-4 py-2 text-right tabular-nums ${
+                                (stock[v.id] ?? 0) <= 0
+                                  ? "font-medium text-red-700"
+                                  : (stock[v.id] ?? 0) <= LOW_STOCK
+                                    ? "font-medium text-amber-700"
+                                    : ""
                               }`}
                             >
-                              ▶
-                            </span>
-                            <span>
-                              <span className="font-medium group-hover:text-brand-deep">
-                                {p.name}
-                              </span>
-                              <span className="ml-2 whitespace-nowrap rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
-                                {p.variants.length} options
-                              </span>
-                              <ProductDetails product={p} />
-                            </span>
-                          </button>
-                        ) : (
-                          <>
-                            <span className="font-medium">{p.name}</span>
-                            <ProductDetails product={p} />
-                          </>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted">{p.sku}</td>
-                      <td className="px-4 py-3 text-muted">
-                        {p.barcode ?? "—"}
-                      </td>
-                      {p.variants ? (
-                        <>
-                          <td className="px-4 py-3 text-right">—</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right">
-                            {Math.min(...prices) === Math.max(...prices)
-                              ? money.format(prices[0])
-                              : `${money.format(Math.min(...prices))} – ${money.format(Math.max(...prices))}`}
-                          </td>
-                          <td className="px-4 py-3 text-right">—</td>
-                        </>
-                      ) : (
-                        <PriceCells item={p} />
-                      )}
-                      <td
-                        className={`px-4 py-3 text-right tabular-nums ${
-                          level === "out"
-                            ? "font-medium text-red-700"
-                            : level === "low"
-                              ? "font-medium text-amber-700"
-                              : ""
-                        }`}
-                      >
-                        {stock[p.id] ?? 0}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => setEditing(p)}
-                          className="font-medium text-brand-deep hover:underline"
-                        >
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                    {expanded &&
-                      p.variants?.map((v) => (
-                        <tr key={v.id} className="bg-surface-alt/60">
-                          <td />
-                          <td />
-                          <td className="px-4 py-2 pl-10">
-                            <span className="text-muted">↳</span> {v.name}
-                          </td>
-                          <td className="px-4 py-2 text-muted">{v.sku}</td>
-                          <td className="px-4 py-2 text-muted">
-                            {v.barcode ?? "—"}
-                          </td>
-                          <PriceCells item={v} />
-                          <td
-                            className={`px-4 py-2 text-right tabular-nums ${
-                              (stock[v.id] ?? 0) <= 0
-                                ? "font-medium text-red-700"
-                                : (stock[v.id] ?? 0) <= LOW_STOCK
-                                  ? "font-medium text-amber-700"
-                                  : ""
-                            }`}
-                          >
-                            {stock[v.id] ?? 0}
-                          </td>
-                          <td />
-                        </tr>
-                      ))}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                              {stock[v.id] ?? 0}
+                            </td>
+                            <td />
+                          </tr>
+                        ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="products" />

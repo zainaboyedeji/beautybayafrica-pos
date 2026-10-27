@@ -7,7 +7,7 @@ const SLIDE_MS = 4500;
 // Small mock screens of each feature, drawn with plain divs so they stay
 // crisp and on-palette without shipping screenshots.
 const CARD =
-  "w-72 rounded-2xl bg-white p-5 text-ink shadow-xl shadow-brand-deep/20";
+  "w-72 rounded-2xl bg-white p-5 text-ink shadow-2xl shadow-black/30 ring-1 ring-line";
 
 const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
   {
@@ -32,7 +32,7 @@ const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
           <span>Total</span>
           <span>₦28,500</span>
         </div>
-        <div className="mt-4 rounded-lg bg-brand py-2 text-center text-sm font-semibold">
+        <div className="mt-4 rounded-xl bg-gradient-to-r from-brand to-brand-hover py-2 text-center text-sm font-semibold">
           Charge
         </div>
       </div>
@@ -56,7 +56,7 @@ const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
             </div>
             <div className="mt-1 h-2 rounded-full bg-brand-soft">
               <div
-                className={`h-2 rounded-full ${Number(pct) < 20 ? "bg-brand-deep" : "bg-brand"}`}
+                className={`h-2 rounded-full ${Number(pct) < 20 ? "bg-brand-deep" : "bg-gradient-to-r from-brand to-brand-hover"}`}
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -76,7 +76,7 @@ const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
           {[40, 65, 50, 80, 70, 95, 60].map((h, i) => (
             <div
               key={i}
-              className={`flex-1 rounded-t-md ${i === 5 ? "bg-brand" : "bg-brand-soft"}`}
+              className={`flex-1 rounded-t-md ${i === 5 ? "bg-gradient-to-t from-brand to-brand-hover" : "bg-brand-soft"}`}
               style={{ height: `${h}%` }}
             />
           ))}
@@ -95,7 +95,7 @@ const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
           ["FM", "Fatima M.", "6 visits"],
         ].map(([initials, name, visits]) => (
           <div key={name} className="flex items-center gap-3 py-2">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-soft text-xs font-semibold text-brand-deep">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-brand-soft to-violet-100 text-xs font-semibold text-brand-deep">
               {initials}
             </span>
             <span className="flex-1 text-sm">{name}</span>
@@ -111,7 +111,7 @@ const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
     visual: (
       <div className={`${CARD} flex items-center justify-between`}>
         <div className="text-center">
-          <div className="mx-auto h-12 w-16 rounded-md border-2 border-ink" />
+          <div className="mx-auto h-12 w-16 rounded-lg border-2 border-brand-deep" />
           <p className="mt-2 text-xs text-muted">Till</p>
         </div>
         <div className="flex flex-1 justify-center gap-1">
@@ -124,7 +124,7 @@ const SLIDES: { title: string; text: string; visual: ReactNode }[] = [
           ))}
         </div>
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 rounded-full border-2 border-ink" />
+          <div className="mx-auto h-12 w-12 rounded-full border-2 border-brand-deep" />
           <p className="mt-2 text-xs text-muted">Online shop</p>
         </div>
       </div>
@@ -150,10 +150,23 @@ export default function FeatureShowcase() {
       aria-label="Features"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="relative hidden flex-1 flex-col overflow-hidden bg-brand-deep text-white lg:flex"
+      className="relative m-3 hidden flex-1 flex-col overflow-hidden rounded-[2rem] bg-gradient-to-br from-brand-deep via-brand-hover to-brand text-white shadow-2xl shadow-brand/30 lg:flex"
     >
-      <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-brand/40 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-brand/30 blur-3xl" />
+      <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 animate-drift rounded-full bg-white/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-violet-300/25 blur-3xl" />
+
+      <div className="relative flex items-center gap-3 px-10 pt-10">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="" className="h-10 w-10 rounded-xl bg-white p-0.5" />
+        <span className="leading-tight">
+          <span className="block font-display text-lg font-semibold">
+            Beauty Bay Africa
+          </span>
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80">
+            Point of sale
+          </span>
+        </span>
+      </div>
 
       <div className="relative flex flex-1 overflow-hidden">
         <div
@@ -167,8 +180,8 @@ export default function FeatureShowcase() {
               className="flex w-full shrink-0 flex-col items-center justify-center px-12 text-center"
             >
               {slide.visual}
-              <h2 className="mt-10 text-3xl">{slide.title}</h2>
-              <p className="mt-3 max-w-sm text-white/80">{slide.text}</p>
+              <h2 className="mt-10 text-4xl">{slide.title}</h2>
+              <p className="mt-3 max-w-sm text-white/85">{slide.text}</p>
             </div>
           ))}
         </div>
@@ -183,7 +196,9 @@ export default function FeatureShowcase() {
             aria-current={i === index}
             onClick={() => setIndex(i)}
             className={`h-2 rounded-full transition-all ${
-              i === index ? "w-8 bg-white" : "w-2 bg-white/40 hover:bg-white/70"
+              i === index
+                ? "w-8 bg-white"
+                : "w-2 bg-white/50 hover:bg-white"
             }`}
           />
         ))}

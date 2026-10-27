@@ -13,6 +13,8 @@ import {
 } from "../../components/user-labels";
 import { fetchUserOrders, fetchUsers, money, useLoad } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import { CARD, TABLE, TABLE_CARD, THEAD } from "../../components/form-styles";
+import PageHeader from "../../components/page-header";
 
 // The user's id comes from the address (?id=…), which is only known in the
 // browser, so the page waits for it inside Suspense.
@@ -58,36 +60,46 @@ function UserHistory() {
   return (
     <div className="mx-auto max-w-6xl">
       <BackLink />
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-3xl font-semibold">{user.name}</h1>
-        <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ACCESS_STYLES[user.access]}`}
-        >
-          {ACCESS_LABELS[user.access]}
-        </span>
+      <div className="mt-4">
+        <PageHeader
+          icon="users"
+          section="Team · User"
+          title={
+            <span className="flex flex-wrap items-center gap-3">
+              {user.name}
+              <span
+                className={`rounded-full px-2.5 py-0.5 font-sans text-xs font-medium ${ACCESS_STYLES[user.access]}`}
+              >
+                {ACCESS_LABELS[user.access]}
+              </span>
+            </span>
+          }
+          description={
+            [
+              user.jobRole,
+              user.createdAt &&
+                `Added ${new Date(user.createdAt).toLocaleDateString()}`,
+            ]
+              .filter(Boolean)
+              .join(" · ") ||
+            (user.access === "admin"
+              ? "Logs in with the admin password"
+              : "No longer has a login")
+          }
+        />
       </div>
-      <p className="mt-1 text-sm text-muted">
-        {[
-          user.jobRole,
-          user.createdAt &&
-            `Added ${new Date(user.createdAt).toLocaleDateString()}`,
-        ]
-          .filter(Boolean)
-          .join(" · ") ||
-          (user.access === "admin"
-            ? "Logs in with the admin password"
-            : "No longer has a login")}
-      </p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((t) => (
           <div
             key={t.label}
-            className="rounded-lg bg-white p-5 shadow-sm"
+            className={CARD}
             title={t.title ? new Date(t.title).toLocaleString() : undefined}
           >
-            <p className="text-sm text-muted">{t.label}</p>
-            <p className="mt-1 text-2xl font-semibold">{t.value}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+              {t.label}
+            </p>
+            <p className="mt-2 text-2xl font-semibold">{t.value}</p>
           </div>
         ))}
       </div>
@@ -173,41 +185,43 @@ function UserSales({ user }: { user: string }) {
 
   return (
     <>
-      <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-        <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-          <tr>
-            <th className="px-4 py-3">Date</th>
-            <th className="px-4 py-3">Customer</th>
-            <th className="px-4 py-3">Items</th>
-            <th className="px-4 py-3">Payment</th>
-            <th className="px-4 py-3 text-right">Total</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {pager.pageItems?.map((order) => (
-            <tr key={order.id} className="align-top">
-              <td className="whitespace-nowrap px-4 py-3">
-                {new Date(order.createdAt).toLocaleString()}
-              </td>
-              <td className="px-4 py-3">
-                <span className="font-medium">{order.customer.name}</span>
-                <span className="block text-xs text-muted">
-                  {order.customer.phone}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                {order.items
-                  .map((i) => `${i.quantity} × ${i.name ?? "Removed product"}`)
-                  .join(", ")}
-              </td>
-              <td className="px-4 py-3 capitalize">{order.paymentMethod}</td>
-              <td className="px-4 py-3 text-right font-medium">
-                {money.format(order.total)}
-              </td>
+      <div className={TABLE_CARD}>
+        <table className={TABLE}>
+          <thead className={THEAD}>
+            <tr>
+              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">Customer</th>
+              <th className="px-4 py-3">Items</th>
+              <th className="px-4 py-3">Payment</th>
+              <th className="px-4 py-3 text-right">Total</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {pager.pageItems?.map((order) => (
+              <tr key={order.id} className="align-top">
+                <td className="whitespace-nowrap px-4 py-3">
+                  {new Date(order.createdAt).toLocaleString()}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="font-medium">{order.customer.name}</span>
+                  <span className="block text-xs text-muted">
+                    {order.customer.phone}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  {order.items
+                    .map((i) => `${i.quantity} × ${i.name ?? "Removed product"}`)
+                    .join(", ")}
+                </td>
+                <td className="px-4 py-3 capitalize">{order.paymentMethod}</td>
+                <td className="px-4 py-3 text-right font-medium">
+                  {money.format(order.total)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <Pagination pager={pager} label="sales" />
     </>
   );

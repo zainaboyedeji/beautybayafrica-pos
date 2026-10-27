@@ -48,7 +48,7 @@ const pageNumbers = (page: number, count: number) => {
 };
 
 const BUTTON =
-  "min-w-9 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40";
+  "min-w-9 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40";
 
 export default function Pagination({
   pager,
@@ -70,7 +70,7 @@ export default function Pagination({
   return (
     <nav
       aria-label="Pages"
-      className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
+      className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
     >
       <span className="text-muted">
         {start + 1}–{Math.min(start + size, total)} of {total} {label}
@@ -96,7 +96,7 @@ export default function Pagination({
                 aria-current={n === page ? "page" : undefined}
                 className={`${BUTTON} ${
                   n === page
-                    ? "bg-ink text-white"
+                    ? "bg-gradient-to-r from-brand to-brand-hover text-ink shadow-md shadow-brand/30"
                     : "bg-white shadow-sm hover:bg-brand-soft"
                 }`}
               >
@@ -121,7 +121,7 @@ export default function Pagination({
         <select
           value={size}
           onChange={(e) => setSize(Number(e.target.value))}
-          className="rounded-md border border-line-strong bg-white px-2 py-1 text-ink outline-none focus:ring-2 focus:ring-brand"
+          className="rounded-lg border border-line-strong bg-white px-2 py-1 text-ink outline-none focus:ring-2 focus:ring-brand"
         >
           {PAGE_SIZES.map((n) => (
             <option key={n} value={n}>

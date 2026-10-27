@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useState } from "react";
 import type { RequestStatus, StoreRequest } from "@pos/types";
 import { Notice } from "../../components/action-modals";
-import { PRIMARY_BUTTON } from "../../components/form-styles";
+import {
+  PRIMARY_BUTTON,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
+} from "../../components/form-styles";
 import ConfirmDialog from "../../components/confirm-dialog";
 import RequestStatusCell, {
   STATUS_LABELS,
@@ -21,6 +26,7 @@ import {
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 // What the admin can do next with a request in each status.
 const NEXT_ACTIONS: Record<
@@ -93,17 +99,22 @@ export default function RequestsPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Requests</h1>
+      <PageHeader
+        icon="requests"
+        section="Team"
+        title="Requests"
+        description={
+          <>
+            Requests made by staff (money, stock, repairs, time off), and PIN
+            requests from staff who forgot theirs. Approve or reject them here; the
+            person who asked sees your decision and note.
+          </>
+        }
+      >
         <Link href="/request" className={PRIMARY_BUTTON}>
           Make a request
         </Link>
-      </div>
-      <p className="mt-1 text-sm text-muted">
-        Requests made by staff (money, stock, repairs, time off), and PIN
-        requests from staff who forgot theirs. Approve or reject them here; the
-        person who asked sees your decision and note.
-      </p>
+      </PageHeader>
       <Notice text={notice} />
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       {settingPin && staff.data && (
@@ -151,9 +162,9 @@ export default function RequestsPage() {
                 key={s}
                 onClick={() => setStatus(s)}
                 aria-pressed={status === s}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
+                className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
                   status === s
-                    ? "bg-ink text-white"
+                    ? "bg-gradient-to-r from-brand to-brand-hover text-ink shadow-md shadow-brand/30"
                     : "bg-white text-ink shadow-sm hover:bg-brand-soft"
                 }`}
               >
@@ -174,68 +185,70 @@ export default function RequestsPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Request</th>
-                <th className="px-4 py-3">Requested by</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((r) => (
-                <tr key={r.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {new Date(r.createdAt).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-medium">{r.title}</span>
-                    {r.kind === "pin_reset" && (
-                      <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
-                        PIN
-                      </span>
-                    )}
-                    {r.details && (
-                      <p className="mt-0.5 whitespace-pre-line text-muted">
-                        {r.details}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{r.requestedBy}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {r.amount !== undefined ? money.format(r.amount) : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <RequestStatusCell request={r} />
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {r.kind === "pin_reset" && r.status === "pending" && (
-                      <button
-                        onClick={() => setSettingPin(r)}
-                        className="ml-4 font-medium text-emerald-700 hover:underline"
-                      >
-                        Set new PIN
-                      </button>
-                    )}
-                    {actions(r).map((a) => (
-                      <button
-                        key={a.status}
-                        onClick={() =>
-                          setDeciding({ request: r, next: a.status })
-                        }
-                        className={`ml-4 font-medium hover:underline ${a.style}`}
-                      >
-                        {a.label}
-                      </button>
-                    ))}
-                  </td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Request</th>
+                  <th className="px-4 py-3">Requested by</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((r) => (
+                  <tr key={r.id} className="align-top">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {new Date(r.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-medium">{r.title}</span>
+                      {r.kind === "pin_reset" && (
+                        <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                          PIN
+                        </span>
+                      )}
+                      {r.details && (
+                        <p className="mt-0.5 whitespace-pre-line text-muted">
+                          {r.details}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">{r.requestedBy}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {r.amount !== undefined ? money.format(r.amount) : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <RequestStatusCell request={r} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {r.kind === "pin_reset" && r.status === "pending" && (
+                        <button
+                          onClick={() => setSettingPin(r)}
+                          className="ml-4 font-medium text-emerald-700 hover:underline"
+                        >
+                          Set new PIN
+                        </button>
+                      )}
+                      {actions(r).map((a) => (
+                        <button
+                          key={a.status}
+                          onClick={() =>
+                            setDeciding({ request: r, next: a.status })
+                          }
+                          className={`ml-4 font-medium hover:underline ${a.style}`}
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="requests" />

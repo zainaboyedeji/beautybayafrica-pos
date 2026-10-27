@@ -5,7 +5,12 @@ import ActionModals, {
   Notice,
   type ActionModal,
 } from "../../components/action-modals";
-import { PRIMARY_BUTTON } from "../../components/form-styles";
+import {
+  PRIMARY_BUTTON,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
+} from "../../components/form-styles";
 import Pagination, { usePagination } from "../../components/pagination";
 import SearchBox, { matches, NoMatches } from "../../components/search-box";
 import {
@@ -16,6 +21,7 @@ import {
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 export default function CustomersPage() {
   const customers = useLoad(fetchCustomers);
@@ -36,12 +42,11 @@ export default function CustomersPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Customers</h1>
+      <PageHeader icon="customers" section="Shop" title="Customers">
         <button onClick={() => setModal("customer")} className={PRIMARY_BUTTON}>
           Add customer
         </button>
-      </div>
+      </PageHeader>
       <Notice text={notice} />
       <ActionModals
         open={modal}
@@ -71,36 +76,38 @@ export default function CustomersPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3 text-right">Purchases</th>
-                <th className="px-4 py-3 text-right">Total spent</th>
-                <th className="px-4 py-3">Last purchase</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((c) => (
-                <tr key={c.phone}>
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
-                  <td className="px-4 py-3">{c.phone}</td>
-                  <td className="px-4 py-3">{c.email ?? "—"}</td>
-                  <td className="px-4 py-3 text-right">{c.orders}</td>
-                  <td className="px-4 py-3 text-right font-medium">
-                    {money.format(c.totalSpent)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {c.lastPurchase
-                      ? new Date(c.lastPurchase).toLocaleString()
-                      : "—"}
-                  </td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Phone</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3 text-right">Purchases</th>
+                  <th className="px-4 py-3 text-right">Total spent</th>
+                  <th className="px-4 py-3">Last purchase</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((c) => (
+                  <tr key={c.phone}>
+                    <td className="px-4 py-3 font-medium">{c.name}</td>
+                    <td className="px-4 py-3">{c.phone}</td>
+                    <td className="px-4 py-3">{c.email ?? "—"}</td>
+                    <td className="px-4 py-3 text-right">{c.orders}</td>
+                    <td className="px-4 py-3 text-right font-medium">
+                      {money.format(c.totalSpent)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {c.lastPurchase
+                        ? new Date(c.lastPurchase).toLocaleString()
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="customers" />

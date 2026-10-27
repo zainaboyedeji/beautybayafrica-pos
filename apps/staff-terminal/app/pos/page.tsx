@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Customer, Order, PaymentMethod, Product } from "@pos/types";
-import Link from "next/link";
 import { flushSync } from "react-dom";
 import Receipt from "../components/receipt";
 import {
@@ -13,8 +12,18 @@ import {
   orderItem,
   sellables,
 } from "../lib/api";
-import { getSession, logOut } from "../lib/auth";
+import { getSession } from "../lib/auth";
 import { printPage } from "../lib/print";
+import { INPUT, PRIMARY_BUTTON } from "../components/form-styles";
+import Icon from "../components/icons";
+import TopBar from "../components/top-bar";
+
+// Pop-ups over the till: a soft veil and a white card that pops in.
+const OVERLAY =
+  "fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-6 backdrop-blur-sm print:hidden";
+const DIALOG = "w-full animate-pop-in rounded-2xl bg-white p-6 shadow-2xl";
+const QUIET_BUTTON =
+  "w-full rounded-xl py-2 text-sm font-medium text-muted transition hover:bg-brand-soft/60 hover:text-ink disabled:opacity-40";
 
 // Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
 const AUTO_PRINT = process.env.NEXT_PUBLIC_AUTO_PRINT_RECEIPT !== "false";
@@ -92,6 +101,7 @@ export default function Till() {
     .filter((s) => cart[s.key])
     .map((s) => ({ item: s, quantity: cart[s.key] }));
   const total = lines.reduce((sum, l) => sum + l.item.price * l.quantity, 0);
+  const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
   const left = (key: string) => (stock[key] ?? 0) - (cart[key] ?? 0);
 
@@ -188,44 +198,36 @@ export default function Till() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-surface-alt text-ink print:block print:h-auto print:bg-white">
-      <header className="flex items-center print:hidden gap-4 bg-ink px-6 py-3 text-white">
-        <h1 className="text-lg font-semibold">Point of sale</h1>
-        {session?.role === "admin" && (
-          <Link
-            href="/"
-            className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-          >
-            ← Back office
-          </Link>
-        )}
-        <Link
-          href="/request"
-          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-        >
-          Requests
-        </Link>
-        <input
-          value={search}
-          autoFocus
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") addScanned();
-          }}
-          placeholder="Scan barcode or search by name or SKU"
-          className="ml-auto w-72 rounded-md bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-brand"
-        />
-        <span className="text-sm text-zinc-400">{session?.name}</span>
-        <button
-          onClick={logOut}
-          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-        >
-          Log out
-        </button>
-      </header>
+    <div className="flex h-screen flex-col gap-3 p-3 text-ink print:block print:h-auto print:bg-white print:p-0">
+      <TopBar
+        title="The till"
+        name={session?.name}
+        links={[
+          ...(session?.role === "admin"
+            ? [{ href: "/", label: "Back office", icon: "arrowLeft" as const }]
+            : []),
+          { href: "/request", label: "Requests", icon: "requests" },
+        ]}
+      >
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted/80">
+            <Icon name="search" className="h-4 w-4" />
+          </span>
+          <input
+            value={search}
+            autoFocus
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addScanned();
+            }}
+            placeholder="Scan barcode or search by name or SKU"
+            className="w-80 rounded-xl bg-white py-2 pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-muted focus:ring-4 focus:ring-white/50"
+          />
+        </div>
+      </TopBar>
 
       {error && (
-        <div className="flex items-center justify-between bg-red-100 print:hidden px-6 py-2 text-sm text-red-800">
+        <div className="flex items-center justify-between rounded-xl bg-red-50 px-5 py-2.5 text-sm text-red-800 ring-1 ring-red-100 print:hidden">
           <span>{error}</span>
           <button onClick={() => void load()} className="font-medium underline">
             Retry
@@ -233,8 +235,8 @@ export default function Till() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 print:hidden">
-        <main className="flex-1 overflow-y-auto p-6">
+      <div className="flex min-h-0 flex-1 gap-3 print:hidden">
+        <main className="flex-1 overflow-y-auto p-3">
           {loading ? (
             <p className="text-muted">Loading products…</p>
           ) : visible.length === 0 ? (
@@ -258,28 +260,32 @@ export default function Till() {
                         ? setPicking(p)
                         : setQuantity(p.id, (cart[p.id] ?? 0) + 1)
                     }
-                    className="flex flex-col rounded-lg bg-white p-4 text-left shadow-sm transition hover:shadow-md active:scale-[0.98] disabled:opacity-40"
+                    className="group flex flex-col rounded-2xl bg-white p-3 text-left shadow-soft ring-1 ring-line transition hover:-translate-y-0.5 hover:ring-brand/40 active:scale-[0.98] disabled:translate-y-0 disabled:opacity-40"
                   >
                     {p.imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={p.imageUrl}
                         alt=""
-                        className="mb-3 aspect-square w-full rounded-md object-cover"
+                        className="mb-3 aspect-square w-full rounded-xl object-cover"
                       />
                     ) : (
-                      <div className="mb-3 flex aspect-square w-full items-center justify-center rounded-md bg-surface-alt text-3xl font-semibold text-brand">
+                      <div className="mb-3 flex aspect-square w-full items-center justify-center rounded-xl bg-gradient-to-br from-brand-soft via-surface-alt to-violet-100 font-display text-4xl font-semibold text-brand-deep transition group-hover:from-brand/30">
                         {p.name.charAt(0).toUpperCase()}
                       </div>
                     )}
-                    <span className="text-xs text-muted">{p.sku}</span>
-                    <span className="mt-1 font-medium">{p.name}</span>
+                    <span className="px-1 text-[11px] font-medium uppercase tracking-wide text-muted">
+                      {p.sku}
+                    </span>
+                    <span className="mt-0.5 px-1 font-medium leading-snug">
+                      {p.name}
+                    </span>
                     {p.variants && (
-                      <span className="mt-1 self-start rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
+                      <span className="ml-1 mt-1.5 self-start rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
                         {p.variants.length} options
                       </span>
                     )}
-                    <span className="mt-4 text-lg font-semibold">
+                    <span className="mt-auto px-1 pt-3 text-lg font-semibold">
                       {lowest < Math.max(...prices) && (
                         <span className="text-sm font-normal text-muted">
                           From{" "}
@@ -287,7 +293,15 @@ export default function Till() {
                       )}
                       {money.format(lowest)}
                     </span>
-                    <span className="text-xs text-muted">
+                    <span
+                      className={`px-1 text-xs ${
+                        inStock <= 0
+                          ? "font-medium text-red-700"
+                          : inStock <= 5
+                            ? "font-medium text-amber-700"
+                            : "text-muted"
+                      }`}
+                    >
                       {inStock > 0 ? `${inStock} in stock` : "Out of stock"}
                     </span>
                   </button>
@@ -297,14 +311,22 @@ export default function Till() {
           )}
         </main>
 
-        <aside className="flex w-96 flex-col border-l border-line bg-white">
-          <h2 className="border-b border-line px-5 py-4 font-semibold">
-            Current sale
-          </h2>
+        <aside className="flex w-96 flex-col overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-line">
+          <div className="flex items-center justify-between border-b border-line bg-gradient-to-r from-surface-alt to-brand-soft/50 px-5 py-4">
+            <h2 className="text-xl font-semibold">Current sale</h2>
+            {lines.length > 0 && (
+              <span className="rounded-full bg-gradient-to-r from-brand to-brand-hover px-2.5 py-0.5 text-xs font-semibold text-ink">
+                {itemCount} item{itemCount === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
           <div className="flex-1 overflow-y-auto px-5">
             {lines.length === 0 ? (
-              <div className="py-6">
-                <p className="text-sm text-muted">
+              <div className="py-8 text-center">
+                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-soft to-violet-100 text-brand-deep">
+                  <Icon name={lastOrder ? "check" : "sell"} className="h-6 w-6" />
+                </span>
+                <p className="mt-3 text-sm text-muted">
                   {lastOrder
                     ? `Sale complete — ${money.format(lastOrder.total)} paid by ${PAYMENT_LABELS[
                         lastOrder.paymentMethod
@@ -314,7 +336,7 @@ export default function Till() {
                 {lastOrder && (
                   <button
                     onClick={() => void printPage()}
-                    className="mt-3 w-full rounded-lg border border-line-strong py-2 text-sm font-medium hover:bg-brand-soft"
+                    className="mt-4 w-full rounded-xl border border-line-strong py-2 text-sm font-medium transition hover:bg-brand-soft/50"
                   >
                     Print receipt
                   </button>
@@ -341,7 +363,7 @@ export default function Till() {
                       <button
                         aria-label={`Remove one ${item.name}`}
                         onClick={() => setQuantity(item.key, quantity - 1)}
-                        className="h-8 w-8 rounded-md bg-surface-alt font-semibold hover:bg-brand-soft"
+                        className="h-8 w-8 rounded-lg bg-surface-alt font-semibold ring-1 ring-line transition hover:bg-brand-soft hover:ring-brand/40"
                       >
                         −
                       </button>
@@ -351,7 +373,7 @@ export default function Till() {
                       <button
                         aria-label={`Add one ${item.name}`}
                         onClick={() => setQuantity(item.key, quantity + 1)}
-                        className="h-8 w-8 rounded-md bg-surface-alt font-semibold hover:bg-brand-soft"
+                        className="h-8 w-8 rounded-lg bg-surface-alt font-semibold ring-1 ring-line transition hover:bg-brand-soft hover:ring-brand/40"
                       >
                         +
                       </button>
@@ -364,24 +386,26 @@ export default function Till() {
               </ul>
             )}
           </div>
-          <div className="border-t border-line p-5">
+          <div className="border-t border-line bg-surface-alt/60 p-5">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm text-muted">Total</span>
-              <span className="text-2xl font-semibold">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                Total
+              </span>
+              <span className="text-3xl font-semibold tabular-nums">
                 {money.format(total)}
               </span>
             </div>
             <button
               disabled={lines.length === 0 || charging}
               onClick={startCheckout}
-              className="mt-4 w-full rounded-lg bg-brand py-3 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
+              className={`${PRIMARY_BUTTON} mt-4 w-full py-3.5 text-base`}
             >
-              Charge
+              Charge {lines.length > 0 && money.format(total)}
             </button>
             <button
               disabled={lines.length === 0 || charging}
               onClick={() => setCart({})}
-              className="mt-2 w-full rounded-lg py-2 text-sm text-muted hover:bg-brand-soft disabled:opacity-40"
+              className={`${QUIET_BUTTON} mt-2`}
             >
               Clear sale
             </button>
@@ -391,7 +415,7 @@ export default function Till() {
 
       {picking && (
         <div
-          className="fixed inset-0 flex items-center justify-center bg-black/50 p-6 print:hidden"
+          className={OVERLAY}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setPicking(null);
           }}
@@ -400,12 +424,12 @@ export default function Till() {
             role="dialog"
             aria-modal="true"
             aria-label={`Choose ${picking.name}`}
-            className="flex max-h-full w-full max-w-lg flex-col rounded-xl bg-white p-6 shadow-xl"
+            className={`${DIALOG} flex max-h-full max-w-lg flex-col`}
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-deep">
               Choose an option
             </p>
-            <h2 className="mt-1 text-xl font-semibold">{picking.name}</h2>
+            <h2 className="mt-1 text-2xl font-semibold">{picking.name}</h2>
             <div className="mt-4 grid gap-2 overflow-y-auto sm:grid-cols-2">
               {sellables(picking).map((s) => {
                 const remaining = left(s.key);
@@ -417,7 +441,7 @@ export default function Till() {
                       setQuantity(s.key, (cart[s.key] ?? 0) + 1);
                       setPicking(null);
                     }}
-                    className="flex flex-col rounded-lg border-2 border-line p-3 text-left hover:border-brand hover:bg-brand-soft disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent"
+                    className="flex flex-col rounded-xl border-2 border-line p-3 text-left transition hover:border-brand hover:bg-brand-soft/50 disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent"
                   >
                     <span className="font-medium">{s.variant?.name}</span>
                     <span className="text-xs text-muted">{s.sku}</span>
@@ -434,7 +458,7 @@ export default function Till() {
             </div>
             <button
               onClick={() => setPicking(null)}
-              className="mt-4 w-full rounded-lg py-2 text-sm text-muted hover:bg-brand-soft"
+              className={`${QUIET_BUTTON} mt-4`}
             >
               Cancel
             </button>
@@ -443,19 +467,32 @@ export default function Till() {
       )}
 
       {step && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-6 print:hidden">
+        <div className={OVERLAY}>
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            className={`${DIALOG} max-w-md`}
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">
+            <div className="flex items-center gap-2">
+              {(["payment", "customer"] as const).map((s) => (
+                <span
+                  key={s}
+                  aria-hidden
+                  className={`h-1.5 flex-1 rounded-full ${
+                    s === step || s === "payment"
+                      ? "bg-gradient-to-r from-brand to-brand-hover"
+                      : "bg-line"
+                  }`}
+                />
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-deep">
               Step {step === "payment" ? 1 : 2} of 2 · {money.format(total)}
             </p>
 
             {step === "payment" ? (
               <>
-                <h2 className="mt-1 text-xl font-semibold">
+                <h2 className="mt-1 text-2xl font-semibold">
                   How is the customer paying?
                 </h2>
                 <div className="mt-5 grid grid-cols-2 gap-3">
@@ -466,7 +503,7 @@ export default function Till() {
                         setPaymentMethod(m);
                         setStep("customer");
                       }}
-                      className={`rounded-lg border-2 py-8 text-lg font-semibold hover:border-brand hover:bg-brand-soft ${
+                      className={`rounded-2xl border-2 py-8 text-lg font-semibold transition hover:-translate-y-0.5 hover:border-brand hover:bg-brand-soft/50 ${
                         paymentMethod === m
                           ? "border-brand bg-brand-soft"
                           : "border-line"
@@ -478,7 +515,7 @@ export default function Till() {
                 </div>
                 <button
                   onClick={() => setStep(null)}
-                  className="mt-4 w-full rounded-lg py-2 text-sm text-muted hover:bg-brand-soft"
+                  className={`${QUIET_BUTTON} mt-4`}
                 >
                   Cancel
                 </button>
@@ -490,7 +527,7 @@ export default function Till() {
                   if (!existing) void completeSale();
                 }}
               >
-                <h2 className="mt-1 text-xl font-semibold">Customer details</h2>
+                <h2 className="mt-1 text-2xl font-semibold">Customer details</h2>
                 <p className="text-sm text-muted">
                   Paying by{" "}
                   {paymentMethod && PAYMENT_LABELS[paymentMethod].toLowerCase()}
@@ -505,7 +542,7 @@ export default function Till() {
                     onChange={(e) =>
                       setCustomer({ ...customer, name: e.target.value })
                     }
-                    className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
+                    className={INPUT}
                   />
                 </label>
                 <label className="mt-3 block text-sm font-medium">
@@ -518,7 +555,7 @@ export default function Till() {
                       setCustomer({ ...customer, phone: e.target.value });
                       setExisting(null);
                     }}
-                    className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
+                    className={INPUT}
                   />
                 </label>
                 <label className="mt-3 block text-sm font-medium">
@@ -530,11 +567,11 @@ export default function Till() {
                     onChange={(e) =>
                       setCustomer({ ...customer, email: e.target.value })
                     }
-                    className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-brand"
+                    className={INPUT}
                   />
                 </label>
                 {existing && (
-                  <div className="mt-4 rounded-lg border border-brand bg-brand-soft p-4 text-sm">
+                  <div className="mt-4 rounded-xl border border-brand/40 bg-brand-soft/60 p-4 text-sm">
                     <p className="font-semibold">
                       This customer already exists
                     </p>
@@ -551,7 +588,7 @@ export default function Till() {
                           setCustomer(existing);
                           void completeSale(existing);
                         }}
-                        className="flex-1 rounded-lg bg-brand py-2 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
+                        className={`${PRIMARY_BUTTON} flex-1`}
                       >
                         Yes, continue
                       </button>
@@ -565,7 +602,7 @@ export default function Till() {
                           setCustomer(EMPTY_CUSTOMER);
                           document.getElementById("customer-name")?.focus();
                         }}
-                        className="flex-1 rounded-lg bg-white py-2 font-medium hover:bg-surface-alt disabled:opacity-40"
+                        className="flex-1 rounded-xl bg-white py-2 font-medium ring-1 ring-line-strong transition hover:bg-surface-alt disabled:opacity-40"
                       >
                         No, new customer
                       </button>
@@ -580,14 +617,14 @@ export default function Till() {
                     type="button"
                     disabled={charging}
                     onClick={() => setStep("payment")}
-                    className="flex-1 rounded-lg bg-surface-alt py-3 font-medium hover:bg-brand-soft disabled:opacity-40"
+                    className="flex-1 rounded-xl bg-surface-alt py-3 font-medium ring-1 ring-line transition hover:bg-brand-soft/60 disabled:opacity-40"
                   >
                     Back
                   </button>
                   <button
                     type="submit"
                     disabled={!customerValid || charging || !!existing}
-                    className="flex-1 rounded-lg bg-brand py-3 font-semibold text-ink hover:bg-brand-hover disabled:opacity-40"
+                    className={`${PRIMARY_BUTTON} flex-1 py-3`}
                   >
                     {charging ? "Completing…" : "Complete sale"}
                   </button>

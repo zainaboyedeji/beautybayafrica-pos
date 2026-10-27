@@ -9,9 +9,14 @@ import type {
 import { Notice } from "../../components/action-modals";
 import ConfirmDialog from "../../components/confirm-dialog";
 import {
+  CARD,
   INPUT,
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
+  SELECT,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
 } from "../../components/form-styles";
 import Modal from "../../components/modal";
 import Pagination, { usePagination } from "../../components/pagination";
@@ -26,6 +31,7 @@ import {
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 // Suggestions for the category box; any other category can be typed in.
 const CATEGORIES = [
@@ -65,8 +71,6 @@ const PAYMENT_LABELS: Record<ExpensePaymentMethod, string> = {
   card: "Card",
 };
 
-const SELECT =
-  "rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand";
 
 // Today on this computer's calendar, as YYYY-MM-DD.
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -202,16 +206,21 @@ export default function StoreItemsPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Store items</h1>
+      <PageHeader
+        icon="storeItems"
+        section="Money"
+        title="Store items"
+        description={
+          <>
+            Things the shop owns for its own use, such as phones, laptops, uniforms
+            and furniture. Products for sale are in Inventory.
+          </>
+        }
+      >
         <button onClick={() => setEditing("new")} className={PRIMARY_BUTTON}>
           Add item
         </button>
-      </div>
-      <p className="mt-1 text-sm text-muted">
-        Things the shop owns for its own use, such as phones, laptops, uniforms
-        and furniture. Products for sale are in Inventory.
-      </p>
+      </PageHeader>
       <Notice text={notice} />
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       {removing && (
@@ -245,7 +254,7 @@ export default function StoreItemsPage() {
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((t) => (
-          <div key={t.label} className="rounded-lg bg-white p-5 shadow-sm">
+          <div key={t.label} className={CARD}>
             <p className="text-sm text-muted">{t.label}</p>
             <p className="mt-1 text-2xl font-semibold">{t.value}</p>
           </div>
@@ -314,96 +323,98 @@ export default function StoreItemsPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="w-12 px-4 py-3 text-right">#</th>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Item</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">Cost</th>
-                <th className="px-4 py-3">Bought</th>
-                <th className="px-4 py-3">Who has it</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((item, index) => (
-                <tr key={item.id} className="align-top">
-                  <td className="px-4 py-3 text-right text-muted tabular-nums">
-                    {pager.start + index + 1}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <ItemCode tag={item.tag} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-medium">{item.name}</span>
-                    <span className="block text-xs text-muted">
-                      {item.category}
-                      {item.serialNumber && ` · S/N ${item.serialNumber}`}
-                    </span>
-                    {item.notes && (
-                      <p className="mt-0.5 whitespace-pre-line text-xs text-muted">
-                        {item.notes}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {item.quantity}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {item.unitCost !== undefined ? (
-                      <>
-                        <span className="font-medium">
-                          {money.format(itemValue(item))}
-                        </span>
-                        {item.quantity > 1 && (
-                          <span className="block text-xs text-muted">
-                            {money.format(item.unitCost)} each
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {item.boughtOn ? formatDay(item.boughtOn) : "—"}
-                    {item.supplierName && (
-                      <span className="block text-xs text-muted">
-                        {item.supplierName}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Holders item={item} />
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
-                    >
-                      {STATUS_LABELS[item.status]}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <button
-                      onClick={() => setEditing(item)}
-                      className="font-medium text-brand-deep hover:underline"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setRemoving(item)}
-                      className="ml-4 font-medium text-red-700 hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="w-12 px-4 py-3 text-right">#</th>
+                  <th className="px-4 py-3">Code</th>
+                  <th className="px-4 py-3">Item</th>
+                  <th className="px-4 py-3 text-right">Qty</th>
+                  <th className="px-4 py-3 text-right">Cost</th>
+                  <th className="px-4 py-3">Bought</th>
+                  <th className="px-4 py-3">Who has it</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((item, index) => (
+                  <tr key={item.id} className="align-top">
+                    <td className="px-4 py-3 text-right text-muted tabular-nums">
+                      {pager.start + index + 1}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <ItemCode tag={item.tag} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-medium">{item.name}</span>
+                      <span className="block text-xs text-muted">
+                        {item.category}
+                        {item.serialNumber && ` · S/N ${item.serialNumber}`}
+                      </span>
+                      {item.notes && (
+                        <p className="mt-0.5 whitespace-pre-line text-xs text-muted">
+                          {item.notes}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {item.quantity}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {item.unitCost !== undefined ? (
+                        <>
+                          <span className="font-medium">
+                            {money.format(itemValue(item))}
+                          </span>
+                          {item.quantity > 1 && (
+                            <span className="block text-xs text-muted">
+                              {money.format(item.unitCost)} each
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {item.boughtOn ? formatDay(item.boughtOn) : "—"}
+                      {item.supplierName && (
+                        <span className="block text-xs text-muted">
+                          {item.supplierName}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Holders item={item} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
+                      >
+                        {STATUS_LABELS[item.status]}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <button
+                        onClick={() => setEditing(item)}
+                        className="font-medium text-brand-deep hover:underline"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setRemoving(item)}
+                        className="ml-4 font-medium text-red-700 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="items" />
@@ -716,7 +727,7 @@ function StoreItemForm({
       </label>
 
       {!item && (
-        <div className="rounded-lg border border-line bg-surface-alt px-4 py-3 text-sm sm:col-span-2">
+        <div className="rounded-xl border border-line bg-surface-alt px-4 py-3 text-sm sm:col-span-2">
           <label className="flex items-center gap-2 font-medium">
             <input
               type="checkbox"

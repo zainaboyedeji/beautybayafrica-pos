@@ -43,26 +43,41 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen text-ink">
       <FeatureShowcase />
-      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-surface-alt to-white p-6">
-        {/* One soft glow behind the card; nothing moves. */}
+      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden p-6">
+        {/* Pink and lilac glows behind the card. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 top-1/2 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-soft/60 blur-3xl"
+          className="pointer-events-none absolute left-[40%] top-[40%] h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-soft/70 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-[62%] top-[60%] h-[22rem] w-[22rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-soft/80 blur-3xl"
         />
         <form
-          className="relative w-full max-w-sm rounded-2xl border border-line bg-white px-7 py-8 shadow-lg shadow-brand-deep/5"
+          className="relative w-full max-w-sm animate-pop-in overflow-hidden rounded-3xl bg-white px-7 pb-8 pt-9 shadow-soft ring-1 ring-line"
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
+          {/* A pink edge along the top of the card. */}
+          <div
+            aria-hidden
+            className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-brand via-brand-hover to-violet-400"
+          />
           <div className="flex flex-col items-center text-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="" className="h-16 w-16" />
-            <p className="mt-2 text-xs font-medium uppercase tracking-[0.2em] text-brand-deep">
+            <img
+              src="/logo.png"
+              alt=""
+              className="h-16 w-16 rounded-2xl bg-white p-1 shadow-md shadow-brand/30"
+            />
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-brand-deep">
               Beauty Bay Africa
             </p>
-            <h1 className="mt-5 text-3xl">Welcome back</h1>
+            <h1 className="mt-4 text-4xl">
+              Welcome <span className="italic text-brand">back</span>
+            </h1>
             <p className="mt-1.5 text-sm text-muted">
               {isStaff
                 ? "Enter your PIN to open the till."
@@ -73,7 +88,7 @@ export default function LoginPage() {
           <div
             role="tablist"
             aria-label="Log in as"
-            className="mt-6 grid grid-cols-2 gap-1 rounded-xl bg-surface-alt p-1 text-sm font-medium"
+            className="mt-6 grid grid-cols-2 gap-1 rounded-xl bg-surface-alt p-1 text-sm font-semibold ring-1 ring-line"
           >
             {(["staff", "admin"] as const).map((m) => (
               <button
@@ -87,9 +102,9 @@ export default function LoginPage() {
                   setShowSecret(false);
                   setError(null);
                 }}
-                className={`rounded-lg py-2 transition-colors ${
+                className={`rounded-lg py-2 transition ${
                   mode === m
-                    ? "bg-white text-brand-deep shadow-sm"
+                    ? "bg-gradient-to-r from-brand to-brand-hover text-ink shadow-md shadow-brand/30"
                     : "text-muted hover:text-ink"
                 }`}
               >
@@ -130,7 +145,7 @@ export default function LoginPage() {
           {error && (
             <p
               role="alert"
-              className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+              className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100"
             >
               {error}
             </p>

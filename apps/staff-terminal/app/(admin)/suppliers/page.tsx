@@ -7,6 +7,9 @@ import {
   INPUT,
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
 } from "../../components/form-styles";
 import ConfirmDialog from "../../components/confirm-dialog";
 import Modal from "../../components/modal";
@@ -19,6 +22,7 @@ import {
   useLoad,
 } from "../../lib/api";
 import { LoadError, Loading } from "../../lib/status";
+import PageHeader from "../../components/page-header";
 
 const EMPTY_FORM = {
   name: "",
@@ -69,12 +73,11 @@ export default function SuppliersPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Suppliers</h1>
+      <PageHeader icon="suppliers" section="Money" title="Suppliers">
         <button onClick={() => setEditing("new")} className={PRIMARY_BUTTON}>
           Add supplier
         </button>
-      </div>
+      </PageHeader>
       <Notice text={notice} />
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       {removing && (
@@ -122,49 +125,51 @@ export default function SuppliersPage() {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Contact person</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Address</th>
-                <th className="px-4 py-3">Notes</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((s) => (
-                <tr key={s.id} className="align-top">
-                  <td className="px-4 py-3 font-medium">{s.name}</td>
-                  <td className="px-4 py-3">{s.contactPerson ?? "—"}</td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {s.phone ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">{s.email ?? "—"}</td>
-                  <td className="px-4 py-3">{s.address ?? "—"}</td>
-                  <td className="whitespace-pre-line px-4 py-3 text-muted">
-                    {s.notes ?? "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <button
-                      onClick={() => setEditing(s)}
-                      className="font-medium text-brand-deep hover:underline"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setRemoving(s)}
-                      className="ml-4 font-medium text-red-700 hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Contact person</th>
+                  <th className="px-4 py-3">Phone</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Address</th>
+                  <th className="px-4 py-3">Notes</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((s) => (
+                  <tr key={s.id} className="align-top">
+                    <td className="px-4 py-3 font-medium">{s.name}</td>
+                    <td className="px-4 py-3">{s.contactPerson ?? "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {s.phone ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">{s.email ?? "—"}</td>
+                    <td className="px-4 py-3">{s.address ?? "—"}</td>
+                    <td className="whitespace-pre-line px-4 py-3 text-muted">
+                      {s.notes ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <button
+                        onClick={() => setEditing(s)}
+                        className="font-medium text-brand-deep hover:underline"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setRemoving(s)}
+                        className="ml-4 font-medium text-red-700 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="suppliers" />

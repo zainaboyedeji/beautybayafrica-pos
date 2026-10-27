@@ -6,6 +6,7 @@ import Pagination, { usePagination } from "./pagination";
 import SearchBox, { matches, NoMatches } from "./search-box";
 import { fetchActivity } from "../lib/api";
 import { LoadError, Loading } from "../lib/status";
+import { SELECT, TABLE, TABLE_CARD, THEAD } from "./form-styles";
 
 const ACTION_LABELS: Record<ActivityAction, string> = {
   login: "Logged in",
@@ -87,8 +88,6 @@ const ROLE_LABELS: Record<ActivityEntry["actorRole"], string> = {
   visitor: "Not logged in",
 };
 
-const SELECT =
-  "rounded-md border border-line-strong bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand";
 
 const isToday = (iso: string) =>
   new Date(iso).toDateString() === new Date().toDateString();
@@ -217,46 +216,48 @@ export default function ActivityLog({ user }: { user?: string }) {
         ) : visible.length === 0 ? (
           <NoMatches />
         ) : (
-          <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">When</th>
-                {!user && <th className="px-4 py-3">Who</th>}
-                <th className="px-4 py-3">Activity</th>
-                <th className="px-4 py-3">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {pager.pageItems?.map((e) => (
-                <tr key={e.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {new Date(e.at).toLocaleString()}
-                  </td>
-                  {!user && (
-                    <td className="px-4 py-3">
-                      <span className="font-medium">{e.actorName}</span>
-                      {ROLE_LABELS[e.actorRole] !== e.actorName && (
-                        <span className="block text-xs text-muted">
-                          {ROLE_LABELS[e.actorRole]}
-                        </span>
-                      )}
-                    </td>
-                  )}
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        ACTION_STYLES[e.action] ??
-                        "bg-brand-soft text-brand-deep"
-                      }`}
-                    >
-                      {ACTION_LABELS[e.action] ?? e.action}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">{e.summary}</td>
+          <div className={TABLE_CARD}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className="px-4 py-3">When</th>
+                  {!user && <th className="px-4 py-3">Who</th>}
+                  <th className="px-4 py-3">Activity</th>
+                  <th className="px-4 py-3">Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pager.pageItems?.map((e) => (
+                  <tr key={e.id} className="align-top">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {new Date(e.at).toLocaleString()}
+                    </td>
+                    {!user && (
+                      <td className="px-4 py-3">
+                        <span className="font-medium">{e.actorName}</span>
+                        {ROLE_LABELS[e.actorRole] !== e.actorName && (
+                          <span className="block text-xs text-muted">
+                            {ROLE_LABELS[e.actorRole]}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          ACTION_STYLES[e.action] ??
+                          "bg-brand-soft text-brand-deep"
+                        }`}
+                      >
+                        {ACTION_LABELS[e.action] ?? e.action}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">{e.summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <Pagination pager={pager} label="entries" />

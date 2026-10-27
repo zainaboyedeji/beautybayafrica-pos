@@ -123,7 +123,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
           {CHANNELS.map((c) => (
             <label
               key={c.value}
-              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors ${
+              className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-colors ${
                 channel === c.value
                   ? "border-brand bg-brand-soft/40"
                   : "border-line-strong hover:bg-surface-alt"

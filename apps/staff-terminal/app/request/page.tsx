@@ -1,11 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { Notice } from "../components/action-modals";
 import ConfirmDialog from "../components/confirm-dialog";
-import { INPUT, PRIMARY_BUTTON } from "../components/form-styles";
+import {
+  CARD,
+  INPUT,
+  PRIMARY_BUTTON,
+  TABLE,
+  TABLE_CARD,
+  THEAD,
+} from "../components/form-styles";
 import RequestStatusCell from "../components/request-status";
+import TopBar from "../components/top-bar";
 import {
   apiFetch,
   describeError,
@@ -13,7 +20,7 @@ import {
   money,
   useLoad,
 } from "../lib/api";
-import { getSession, logOut } from "../lib/auth";
+import { getSession } from "../lib/auth";
 import { LoadError, Loading } from "../lib/status";
 
 const EMPTY_FORM = { title: "", requestedBy: "", amount: "", details: "" };
@@ -80,33 +87,25 @@ export default function RequestPage() {
   };
 
   return (
-    <div className="min-h-screen bg-surface-alt text-ink">
-      <header className="flex items-center gap-4 bg-ink px-6 py-3 text-white">
-        <h1 className="text-lg font-semibold">Requests</h1>
-        <Link
-          href="/pos"
-          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-        >
-          ← Till
-        </Link>
-        {isAdmin && (
-          <Link
-            href="/requests"
-            className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-          >
-            Approve requests
-          </Link>
-        )}
-        <span className="ml-auto text-sm text-zinc-400">{session?.name}</span>
-        <button
-          onClick={logOut}
-          className="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-        >
-          Log out
-        </button>
-      </header>
+    <div className="min-h-screen p-3 text-ink">
+      <TopBar
+        title="Requests"
+        name={session?.name}
+        links={[
+          { href: "/pos", label: "Till", icon: "arrowLeft" },
+          ...(isAdmin
+            ? [
+                {
+                  href: "/requests",
+                  label: "Approve requests",
+                  icon: "check" as const,
+                },
+              ]
+            : []),
+        ]}
+      />
 
-      <main className="mx-auto max-w-4xl p-8">
+      <main className="mx-auto max-w-4xl animate-fade-up px-5 py-8">
         {askingPin && (
           <ConfirmDialog
             title="Ask for a new PIN"
@@ -117,7 +116,7 @@ export default function RequestPage() {
           />
         )}
         {!isAdmin && (
-          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-5 py-3 text-sm">
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-white px-5 py-3 text-sm shadow-soft ring-1 ring-line">
             <span className="text-muted">
               {pinRequested
                 ? "Your PIN request is with the admin."
@@ -135,13 +134,13 @@ export default function RequestPage() {
           </div>
         )}
         <form
-          className="flex flex-col gap-3 rounded-lg bg-white p-5 shadow-sm"
+          className={`${CARD} flex flex-col gap-3`}
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
-          <h2 className="text-xl font-semibold">Make a request</h2>
+          <h2 className="text-2xl font-semibold">Make a request</h2>
           <p className="text-sm text-muted">
             For money, stock, repairs, time off or anything that needs the
             admin&apos;s approval. Every request is saved with your name and the
@@ -175,7 +174,7 @@ export default function RequestPage() {
             ) : (
               <div className="text-sm font-medium">
                 Requested by
-                <p className="mt-1 rounded-md bg-surface-alt px-3 py-2 font-normal">
+                <p className="mt-1 rounded-xl bg-surface-alt px-3.5 py-2.5 font-normal ring-1 ring-line">
                   {session?.name}
                 </p>
               </div>
@@ -211,7 +210,7 @@ export default function RequestPage() {
         </form>
         <Notice text={notice} />
 
-        <h2 className="mt-8 text-xl font-semibold">
+        <h2 className="mt-10 text-2xl font-semibold">
           {isAdmin ? "Requests you made" : "Your requests"}
         </h2>
         <div className="mt-3">
@@ -222,45 +221,47 @@ export default function RequestPage() {
           ) : mine.data.length === 0 ? (
             <p className="text-sm text-muted">No requests yet.</p>
           ) : (
-            <table className="w-full overflow-hidden rounded-lg bg-white text-left text-sm shadow-sm">
-              <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Request</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {mine.data.map((r) => (
-                  <tr key={r.id} className="align-top">
-                    <td className="whitespace-nowrap px-4 py-3">
-                      {new Date(r.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-medium">{r.title}</span>
-                      {isAdmin && r.requestedBy !== session?.name && (
-                        <span className="text-muted">
-                          {" "}
-                          · for {r.requestedBy}
-                        </span>
-                      )}
-                      {r.details && (
-                        <p className="mt-0.5 whitespace-pre-line text-muted">
-                          {r.details}
-                        </p>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
-                      {r.amount !== undefined ? money.format(r.amount) : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <RequestStatusCell request={r} />
-                    </td>
+            <div className={TABLE_CARD}>
+              <table className={TABLE}>
+                <thead className={THEAD}>
+                  <tr>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Request</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {mine.data.map((r) => (
+                    <tr key={r.id} className="align-top">
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {new Date(r.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-medium">{r.title}</span>
+                        {isAdmin && r.requestedBy !== session?.name && (
+                          <span className="text-muted">
+                            {" "}
+                            · for {r.requestedBy}
+                          </span>
+                        )}
+                        {r.details && (
+                          <p className="mt-0.5 whitespace-pre-line text-muted">
+                            {r.details}
+                          </p>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        {r.amount !== undefined ? money.format(r.amount) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <RequestStatusCell request={r} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </main>

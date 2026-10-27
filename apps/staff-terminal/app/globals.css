@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
-/* Beauty Bay Africa palette: hot pink accent on clean white, near-black type.
-   Pink fills carry ink text (white on #f847b4 is too faint); brand-deep is the
-   readable pink for links and active text. */
+/* Beauty Bay Africa palette, exactly as in the HR app: hot pink accent on
+   clean white, near-black type, with violet as the second accent. Pink fills
+   carry ink text (white on #f847b4 is too faint); brand-deep is the readable
+   pink for links and active text. */
 @theme {
   --color-brand: #f847b4;
   --color-brand-hover: #ec2aa3;
@@ -14,11 +15,29 @@
   --color-line-strong: #ebcfdf;
   --color-surface-alt: #fff7fb;
 
-  /* Cards and tables: a hairline edge with a soft, faintly pink shadow. */
-  --shadow-sm:
-    0 0 0 1px rgb(235 207 223 / 0.6), 0 1px 2px rgb(168 18 109 / 0.04),
-    0 6px 16px -6px rgb(20 20 20 / 0.08);
-  --radius-lg: 0.875rem;
+  --shadow-soft: 0 10px 30px -14px rgb(168 18 109 / 0.22);
+
+  --animate-fade-up: fade-up 0.4s ease-out both;
+  --animate-pop-in: pop-in 0.22s ease-out both;
+  --animate-drift: drift 9s ease-in-out infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+  }
+  @keyframes drift {
+    50% {
+      transform: translate(14px, -10px);
+    }
+  }
 }
 
 @theme inline {
@@ -28,7 +47,12 @@
 }
 
 body {
-  background: #ffffff;
+  /* Pink and lilac glows in the top corners over a warm white. */
+  background:
+    radial-gradient(1100px 600px at 0% -10%, #ffe1f2 0%, transparent 60%),
+    radial-gradient(900px 520px at 100% -5%, #efe4ff 0%, transparent 55%),
+    #fffafd;
+  background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -38,23 +62,12 @@ body {
   background: var(--color-brand-soft);
 }
 
-/* The back office's page area: a faint pink glow at the top. */
-.app-canvas {
-  background:
-    radial-gradient(
-      1100px 380px at 85% -120px,
-      rgb(255 217 240 / 0.7),
-      transparent 70%
-    ),
-    var(--color-surface-alt);
-}
-
 /* Table rows light up softly under the pointer. */
 main tbody tr {
   transition: background-color 120ms ease;
 }
 main tbody tr:hover {
-  background-color: rgb(255 217 240 / 0.28);
+  background-color: rgb(255 247 251 / 0.6);
 }
 
 /* Slim scrollbars that don't fight the design. */
@@ -68,5 +81,14 @@ main tbody tr:hover {
   h2 {
     font-family: var(--font-display);
     letter-spacing: -0.01em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
