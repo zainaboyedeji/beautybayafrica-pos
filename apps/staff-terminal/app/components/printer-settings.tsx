@@ -14,6 +14,9 @@ import { PRIMARY_BUTTON, SECONDARY_BUTTON, SELECT } from "./form-styles";
 import Icon from "./icons";
 import Modal from "./modal";
 
+/** Common label heights in mm; 0 is a plain roll. */
+const STICKER_HEIGHTS = [30, 40, 50, 60, 70, 80, 100, 0];
+
 /** True inside the desktop app (false while pre-rendering). */
 export const useDesktopApp = () =>
   useSyncExternalStore(
@@ -36,6 +39,11 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
   const [language, setLanguage] = useState<PrinterLanguage>(
     current?.language ?? "escpos",
   );
+  // Label mode: the sticker height in mm, or 0 for a plain roll.
+  const [stickerHeight, setStickerHeight] = useState(
+    current?.stickerHeight ?? 50,
+  );
+  const printer = { port, paper, language, stickerHeight };
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -60,12 +68,12 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
     setTesting(true);
     setMessage(null);
     try {
-      await printTestPage({ port, paper, language });
+      await printTestPage(printer);
       setMessage({
         text:
           language === "escpos"
             ? "Sent. If a test page printed, click Save. If nothing printed, choose Label mode and test again. If the line of numbers wrapped, choose 58mm."
-            : "Sent. If a test page printed, click Save. If nothing printed, choose Receipt mode and test again.",
+            : "Sent. If a test page printed on one sticker and stopped, click Save. If it ran past the sticker or stopped too early, check the sticker size. If nothing printed, choose Receipt mode.",
         ok: true,
       });
     } catch (e) {
@@ -144,6 +152,27 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
               </option>
             </select>
           </label>
+          {language === "tspl" && (
+            <label className="block font-medium">
+              Sticker size
+              <select
+                value={stickerHeight}
+                onChange={(e) => setStickerHeight(Number(e.target.value))}
+                className={`${SELECT} mt-1 w-full`}
+              >
+                {STICKER_HEIGHTS.map((height) => (
+                  <option key={height} value={height}>
+                    {height === 0
+                      ? "Plain roll, no stickers"
+                      : `${paper} × ${height}mm stickers`}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block font-normal text-muted">
+                A long receipt is printed across several stickers.
+              </span>
+            </label>
+          )}
           {message && (
             <p
               role="status"
@@ -178,7 +207,7 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
               type="button"
               disabled={!port}
               onClick={() => {
-                savePrinter({ port, paper, language });
+                savePrinter(printer);
                 onClose();
               }}
               className={PRIMARY_BUTTON}

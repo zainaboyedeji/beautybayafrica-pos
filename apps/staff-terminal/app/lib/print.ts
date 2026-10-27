@@ -1,11 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Order } from "@pos/types";
-import {
-  receiptCommands,
-  testCommands,
-  type PaperWidth,
-  type PrinterLanguage,
-} from "./escpos";
+import { receiptCommands, testCommands, type PrintFormat } from "./escpos";
 
 /** Opens the print dialog; the desktop app's webview needs Tauri to do it. */
 export async function printPage() {
@@ -22,14 +17,11 @@ export async function printPage() {
 /** A port a printer can be reached on, as the desktop app lists them. */
 export type PrinterPort = { name: string; label: string };
 /**
- * The printer this computer sends receipts to, its paper roll width, and
- * whether it is in receipt mode ("escpos") or label mode ("tspl").
+ * The printer this computer sends receipts to, with its paper roll width,
+ * whether it is in receipt mode ("escpos") or label mode ("tspl") and, in
+ * label mode, the sticker height.
  */
-export type DirectPrinter = {
-  port: string;
-  paper: PaperWidth;
-  language: PrinterLanguage;
-};
+export type DirectPrinter = PrintFormat & { port: string };
 
 const PRINTER_KEY = "pos-receipt-printer";
 
@@ -60,7 +52,7 @@ const sendToPrinter = (port: string, commands: Uint8Array) =>
   invoke("print_raw", { port, data: Array.from(commands) });
 
 export const printTestPage = (printer: DirectPrinter) =>
-  sendToPrinter(printer.port, testCommands(printer.paper, printer.language));
+  sendToPrinter(printer.port, testCommands(printer));
 
 /**
  * Prints a sale's receipt: straight to the chosen printer in the desktop
@@ -78,13 +70,7 @@ export async function printOrderReceipt(
     try {
       await sendToPrinter(
         printer.port,
-        receiptCommands(
-          order,
-          productNames,
-          printer.paper,
-          printer.language,
-          copy,
-        ),
+        receiptCommands(order, productNames, printer, copy),
       );
       return null;
     } catch (e) {

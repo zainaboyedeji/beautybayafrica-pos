@@ -28,6 +28,8 @@ type Line = {
   center?: boolean;
   bold?: boolean;
   size?: "double" | "tall";
+  /** Printed on the same sticker as the line after it. */
+  keepWithNext?: boolean;
 };
 
 // Printers only know plain ASCII here, so swap what they can't print.
@@ -139,7 +141,7 @@ function receiptLines(
     ...order.items.flatMap((item) => [
       ...plain(
         wrap(item.name ?? productNames[item.productId] ?? "Item", width),
-        { bold: true },
+        { bold: true, keepWithNext: true },
       ),
       ...plain(
         columns(
@@ -209,61 +211,100 @@ function escpos(lines: Line[]): number[] {
 const DOTS_PER_MM = 8;
 const CHAR_DOTS = 12;
 const LINE_DOTS = 26;
+/** Blank space at the top and bottom of each sticker. */
+const MARGIN_DOTS = 12;
 
-function tspl(lines: Line[], paper: PaperWidth): number[] {
+/**
+ * Label-mode commands. On stickers (`stickerHeight` mm tall) the receipt is
+ * split into sticker-sized pieces, so the printer stops at the end of the
+ * last sticker used; with 0 it is one piece on continuous paper.
+ */
+function tspl(
+  lines: Line[],
+  paper: PaperWidth,
+  stickerHeight: number,
+): number[] {
   const width = LINE_WIDTH[paper];
-  const commands: string[] = [];
-  let y = 8;
-  for (const line of lines) {
+  const pageDots = stickerHeight * DOTS_PER_MM - MARGIN_DOTS;
+  const pages: string[][] = [[]];
+  let y = MARGIN_DOTS;
+  const lineDots = (line: Line) => LINE_DOTS * (line.size ? 2 : 1);
+  for (const [index, line] of lines.entries()) {
     const scale = line.size === "double" ? 2 : 1;
     const tall = line.size ? 2 : 1;
+    const height = lineDots(line);
+    // The space this line needs with the lines it is kept with.
+    let needed = height;
+    for (let i = index; lines[i]?.keepWithNext && lines[i + 1]; i++)
+      needed += lineDots(lines[i + 1]);
+    // A group starting mid-way is already on its sticker.
+    if (index > 0 && lines[index - 1].keepWithNext) needed = height;
+    if (
+      stickerHeight > 0 &&
+      y + Math.min(needed, pageDots - MARGIN_DOTS) > pageDots &&
+      pages.at(-1)!.length > 0
+    ) {
+      pages.push([]);
+      y = MARGIN_DOTS;
+    }
     // Quotes would end the text early.
     const text = ascii(line.text).replace(/"/g, "'");
     const x = line.center
       ? Math.max(0, Math.floor(((width - text.length * scale) * CHAR_DOTS) / 2))
       : 0;
-    if (text.trim())
-      commands.push(`TEXT ${x},${y},"2",0,${scale},${tall},"${text}"`);
-    // Bold: print again one dot to the right.
-    if (line.bold && text.trim())
-      commands.push(`TEXT ${x + 1},${y},"2",0,${scale},${tall},"${text}"`);
-    y += LINE_DOTS * tall;
+    if (text.trim()) {
+      pages.at(-1)!.push(`TEXT ${x},${y},"2",0,${scale},${tall},"${text}"`);
+      // Bold: print again one dot to the right.
+      if (line.bold)
+        pages
+          .at(-1)!
+          .push(`TEXT ${x + 1},${y},"2",0,${scale},${tall},"${text}"`);
+    }
+    y += height;
   }
-  const heightMm = Math.ceil((y + 8 * 4) / DOTS_PER_MM);
+  const height =
+    stickerHeight > 0
+      ? stickerHeight
+      : Math.ceil((y + MARGIN_DOTS * 3) / DOTS_PER_MM);
   const program = [
-    `SIZE ${paper === "80" ? 72 : 48} mm,${heightMm} mm`,
-    // Continuous paper: no gaps between labels to look for.
-    "GAP 0 mm,0 mm",
+    `SIZE ${paper === "80" ? 72 : 48} mm,${height} mm`,
+    // The usual 2mm gap between stickers; none on continuous paper.
+    stickerHeight > 0 ? "GAP 2 mm,0 mm" : "GAP 0 mm,0 mm",
     "DIRECTION 0",
-    "CLS",
-    ...commands,
-    "PRINT 1",
+    ...pages.flatMap((page) => ["CLS", ...page, "PRINT 1"]),
     "",
   ].join("\r\n");
   return [...program].map((c) => c.charCodeAt(0));
 }
 
-const encode = (lines: Line[], paper: PaperWidth, language: PrinterLanguage) =>
-  new Uint8Array(language === "tspl" ? tspl(lines, paper) : escpos(lines));
+/** How the chosen printer wants its commands. */
+export type PrintFormat = {
+  paper: PaperWidth;
+  language: PrinterLanguage;
+  /** Label mode only: sticker height in mm, or 0 for continuous paper. */
+  stickerHeight?: number;
+};
+
+const encode = (lines: Line[], format: PrintFormat) =>
+  new Uint8Array(
+    format.language === "tspl"
+      ? tspl(lines, format.paper, format.stickerHeight ?? 0)
+      : escpos(lines),
+  );
 
 /** The till's receipt for `order`, ready to send to the printer. */
 export function receiptCommands(
   order: Order,
   productNames: Record<string, string>,
-  paper: PaperWidth,
-  language: PrinterLanguage,
+  format: PrintFormat,
   copy = false,
 ): Uint8Array {
   return encode(
-    receiptLines(order, productNames, LINE_WIDTH[paper], copy),
-    paper,
-    language,
+    receiptLines(order, productNames, LINE_WIDTH[format.paper], copy),
+    format,
   );
 }
 
-export function testCommands(
-  paper: PaperWidth,
-  language: PrinterLanguage,
-): Uint8Array {
-  return encode(testLines(LINE_WIDTH[paper]), paper, language);
+export function testCommands(format: PrintFormat): Uint8Array {
+  return encode(testLines(LINE_WIDTH[format.paper]), format);
 }
