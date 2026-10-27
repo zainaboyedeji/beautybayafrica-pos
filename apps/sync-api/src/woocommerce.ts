@@ -2,10 +2,10 @@ import { db, transaction } from "./db";
 import { randomUUID } from "node:crypto";
 
 // Copies the online shop's products from WooCommerce's public Store API:
-// names, selling prices, photos, options and (for products without one) the
-// category. Stock, cost prices, barcodes
-// and SKUs belong to the POS and are never changed here. Products are
-// matched by their WooCommerce id (or SKU, the first time).
+// names, selling prices, SKUs, photos, options and (for products without one)
+// the category. Stock, cost prices and barcodes belong to the POS and are
+// never changed here. Products are matched by their WooCommerce id (or SKU,
+// the first time).
 const SHOP_URL = process.env.WOOCOMMERCE_URL ?? "https://beautybayafrica.com";
 
 type StoreItem = {
@@ -248,6 +248,15 @@ async function applyItems(
     used.add(chosen);
     return chosen;
   };
+  // An existing row takes the website's SKU, unless it has none or another
+  // product or option already uses it; then the POS one is kept.
+  const syncedSku = (row: { sku: string }, item: StoreItem) => {
+    const sku = item.sku.trim();
+    if (!sku || sku === row.sku || used.has(sku)) return row.sku;
+    used.delete(row.sku);
+    used.add(sku);
+    return sku;
+  };
 
   const result: SyncResult = { added: 0, updated: 0, unchanged: 0, skipped: [] };
 
@@ -296,8 +305,10 @@ async function applyItems(
       let changed = false;
       if (match) {
         productId = match.id;
+        const sku = syncedSku(match, item);
         if (
           !match.linked ||
+          match.sku !== sku ||
           match.name !== name ||
           match.price !== price ||
           (image !== null && match.image_url !== image) ||
@@ -307,10 +318,11 @@ async function applyItems(
           await client.query(
             `UPDATE products SET wc_id = $2, name = $3, price = $4,
                image_url = COALESCE($5, image_url),
-               category = COALESCE(category, $6), updated_at = now()
+               category = COALESCE(category, $6), sku = $7, updated_at = now()
              WHERE id = $1`,
-            [productId, item.id, name, price, image, category],
+            [productId, item.id, name, price, image, category, sku],
           );
+          match.sku = sku;
           changed = true;
         }
       } else {
@@ -336,19 +348,24 @@ async function applyItems(
             [randomUUID(), productId, opt.item.id, opt.name, newSku(opt.item), opt.price, position],
           );
           changed = true;
-        } else if (
-          !variant.linked ||
-          variant.name !== opt.name ||
-          variant.price !== opt.price ||
-          variant.position !== position
-        ) {
-          await client.query(
-            `UPDATE product_variants SET wc_id = $2, name = $3, price = $4,
-               position = $5, updated_at = now()
-             WHERE id = $1`,
-            [variant.id, opt.item.id, opt.name, opt.price, position],
-          );
-          changed = true;
+        } else {
+          const sku = syncedSku(variant, opt.item);
+          if (
+            !variant.linked ||
+            variant.sku !== sku ||
+            variant.name !== opt.name ||
+            variant.price !== opt.price ||
+            variant.position !== position
+          ) {
+            await client.query(
+              `UPDATE product_variants SET wc_id = $2, name = $3, price = $4,
+                 position = $5, sku = $6, updated_at = now()
+               WHERE id = $1`,
+              [variant.id, opt.item.id, opt.name, opt.price, position, sku],
+            );
+            variant.sku = sku;
+            changed = true;
+          }
         }
       }
 
