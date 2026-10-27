@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import type { PaperWidth } from "../lib/escpos";
+import type { PaperWidth, PrinterLanguage } from "../lib/escpos";
 import {
   listPrinterPorts,
   printTestPage,
@@ -33,6 +33,9 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
   const [unsupported, setUnsupported] = useState(false);
   const [port, setPort] = useState(current?.port ?? "");
   const [paper, setPaper] = useState<PaperWidth>(current?.paper ?? "80");
+  const [language, setLanguage] = useState<PrinterLanguage>(
+    current?.language ?? "escpos",
+  );
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -57,9 +60,12 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
     setTesting(true);
     setMessage(null);
     try {
-      await printTestPage({ port, paper });
+      await printTestPage({ port, paper, language });
       setMessage({
-        text: "Sent. If a test page printed, click Save. If the line of numbers wrapped, choose 58mm.",
+        text:
+          language === "escpos"
+            ? "Sent. If a test page printed, click Save. If nothing printed, choose Label mode and test again. If the line of numbers wrapped, choose 58mm."
+            : "Sent. If a test page printed, click Save. If nothing printed, choose Receipt mode and test again.",
         ok: true,
       });
     } catch (e) {
@@ -123,6 +129,21 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
               <option value="58">58mm</option>
             </select>
           </label>
+          <label className="block font-medium">
+            Printer mode
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as PrinterLanguage)}
+              className={`${SELECT} mt-1 w-full`}
+            >
+              <option value="escpos">
+                Receipt mode (most receipt printers)
+              </option>
+              <option value="tspl">
+                Label mode (if the printer prints &quot;judge fail&quot;)
+              </option>
+            </select>
+          </label>
           {message && (
             <p
               role="status"
@@ -157,7 +178,7 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
               type="button"
               disabled={!port}
               onClick={() => {
-                savePrinter({ port, paper });
+                savePrinter({ port, paper, language });
                 onClose();
               }}
               className={PRIMARY_BUTTON}

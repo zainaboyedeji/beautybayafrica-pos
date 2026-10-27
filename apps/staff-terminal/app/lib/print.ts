@@ -1,6 +1,11 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Order } from "@pos/types";
-import { receiptCommands, testCommands, type PaperWidth } from "./escpos";
+import {
+  receiptCommands,
+  testCommands,
+  type PaperWidth,
+  type PrinterLanguage,
+} from "./escpos";
 
 /** Opens the print dialog; the desktop app's webview needs Tauri to do it. */
 export async function printPage() {
@@ -16,8 +21,15 @@ export async function printPage() {
 
 /** A port a printer can be reached on, as the desktop app lists them. */
 export type PrinterPort = { name: string; label: string };
-/** The printer this computer sends receipts to, and its paper roll width. */
-export type DirectPrinter = { port: string; paper: PaperWidth };
+/**
+ * The printer this computer sends receipts to, its paper roll width, and
+ * whether it is in receipt mode ("escpos") or label mode ("tspl").
+ */
+export type DirectPrinter = {
+  port: string;
+  paper: PaperWidth;
+  language: PrinterLanguage;
+};
 
 const PRINTER_KEY = "pos-receipt-printer";
 
@@ -26,7 +38,8 @@ export function savedPrinter(): DirectPrinter | null {
   if (!isTauri()) return null;
   try {
     const saved = JSON.parse(localStorage.getItem(PRINTER_KEY) ?? "null");
-    return saved?.port ? saved : null;
+    // Printers saved before label mode existed are in receipt mode.
+    return saved?.port ? { language: "escpos", ...saved } : null;
   } catch {
     return null;
   }
@@ -47,7 +60,7 @@ const sendToPrinter = (port: string, commands: Uint8Array) =>
   invoke("print_raw", { port, data: Array.from(commands) });
 
 export const printTestPage = (printer: DirectPrinter) =>
-  sendToPrinter(printer.port, testCommands(printer.paper));
+  sendToPrinter(printer.port, testCommands(printer.paper, printer.language));
 
 /**
  * Prints a sale's receipt: straight to the chosen printer in the desktop
@@ -65,7 +78,13 @@ export async function printOrderReceipt(
     try {
       await sendToPrinter(
         printer.port,
-        receiptCommands(order, productNames, printer.paper, copy),
+        receiptCommands(
+          order,
+          productNames,
+          printer.paper,
+          printer.language,
+          copy,
+        ),
       );
       return null;
     } catch (e) {
