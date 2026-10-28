@@ -604,30 +604,39 @@ export default function Till() {
             </p>
             <h2 className="mt-1 text-2xl font-semibold">{picking.name}</h2>
             <div className="mt-4 grid gap-2 overflow-y-auto sm:grid-cols-2">
-              {sellables(picking).map((s) => {
-                const remaining = left(s.key);
-                return (
-                  <button
-                    key={s.key}
-                    disabled={remaining <= 0}
-                    onClick={() => {
-                      setQuantity(s.key, (cart[s.key] ?? 0) + 1);
-                      setPicking(null);
-                    }}
-                    className="flex flex-col rounded-xl border-2 border-line p-3 text-left transition hover:border-brand hover:bg-brand-soft/50 disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent"
-                  >
-                    <span className="font-medium">{s.variant?.name}</span>
-                    <span className="text-xs text-muted">{s.sku}</span>
-                    <span className="mt-2 font-semibold">
-                      {money.format(s.price)}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {remaining > 0 ? `${remaining} in stock` : "Out of stock"}
-                      {cart[s.key] ? ` · ${cart[s.key]} in sale` : ""}
-                    </span>
-                  </button>
-                );
-              })}
+              {/* Options in stock come first, like the products. */}
+              {[...sellables(picking)]
+                .sort(
+                  (a, b) =>
+                    Number((stock[b.key] ?? 0) > 0) -
+                    Number((stock[a.key] ?? 0) > 0),
+                )
+                .map((s) => {
+                  const remaining = left(s.key);
+                  return (
+                    <button
+                      key={s.key}
+                      disabled={remaining <= 0}
+                      onClick={() => {
+                        setQuantity(s.key, (cart[s.key] ?? 0) + 1);
+                        setPicking(null);
+                      }}
+                      className="flex flex-col rounded-xl border-2 border-line p-3 text-left transition hover:border-brand hover:bg-brand-soft/50 disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent"
+                    >
+                      <span className="font-medium">{s.variant?.name}</span>
+                      <span className="text-xs text-muted">{s.sku}</span>
+                      <span className="mt-2 font-semibold">
+                        {money.format(s.price)}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {remaining > 0
+                          ? `${remaining} in stock`
+                          : "Out of stock"}
+                        {cart[s.key] ? ` · ${cart[s.key]} in sale` : ""}
+                      </span>
+                    </button>
+                  );
+                })}
             </div>
             <button
               onClick={() => setPicking(null)}
