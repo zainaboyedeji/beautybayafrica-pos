@@ -431,9 +431,12 @@ export default function Till() {
                     <span className="mt-0.5 px-1 font-medium leading-snug">
                       {p.name}
                     </span>
+                    {/* Tapping it asks which option; it is never added on its own. */}
                     {p.variants && (
                       <span className="ml-1 mt-1.5 self-start rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-deep">
-                        {p.variants.length} options
+                        Pick an option ·{" "}
+                        {options.filter((s) => left(s.key) > 0).length} of{" "}
+                        {options.length} available
                       </span>
                     )}
                     <span className="mt-auto px-1 pt-3 text-lg font-semibold">
@@ -600,7 +603,7 @@ export default function Till() {
             className={`${DIALOG} flex max-h-full max-w-lg flex-col`}
           >
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-deep">
-              Choose an option
+              Pick an option
             </p>
             <h2 className="mt-1 text-2xl font-semibold">{picking.name}</h2>
             <div className="mt-4 grid gap-2 overflow-y-auto sm:grid-cols-2">
