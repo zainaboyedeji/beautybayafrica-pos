@@ -1,12 +1,14 @@
 import type { Order, PaymentMethod } from "@pos/types";
 import { money } from "../lib/api";
 
-export const SHOP_NAME = process.env.NEXT_PUBLIC_SHOP_NAME ?? "Beauty Bay Africa";
+export const SHOP_NAME =
+  process.env.NEXT_PUBLIC_SHOP_NAME ?? "Beauty Bay Africa";
 export const SHOP_ADDRESS =
   process.env.NEXT_PUBLIC_SHOP_ADDRESS ??
   "112 Herbert Macaulay Way, Ebute Metta East, Lagos, Nigeria";
 export const SHOP_PHONE = process.env.NEXT_PUBLIC_SHOP_PHONE ?? "0816 259 8682";
-export const SHOP_WEBSITE = process.env.NEXT_PUBLIC_SHOP_WEBSITE ?? "beautybayafrica.com";
+export const SHOP_WEBSITE =
+  process.env.NEXT_PUBLIC_SHOP_WEBSITE ?? "beautybayafrica.com";
 export const SHOP_INSTAGRAM =
   process.env.NEXT_PUBLIC_SHOP_INSTAGRAM ?? "@beautybayafrica";
 export const SHOP_WHATSAPP =
@@ -49,6 +51,7 @@ export default function Receipt({ order, productNames, copy }: Props) {
 
   return (
     <div
+      data-receipt
       className="hidden bg-white font-mono text-[11px] leading-snug text-black print:block"
       style={{ width: PAPER_WIDTH }}
     >

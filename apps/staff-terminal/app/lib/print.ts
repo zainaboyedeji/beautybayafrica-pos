@@ -2,8 +2,30 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Order } from "@pos/types";
 import { receiptCommands, testCommands, type PrintFormat } from "./escpos";
 
+/**
+ * Makes the printed page as long as the <Receipt>. Otherwise the printer
+ * uses its driver's paper size and feeds a long blank strip after it.
+ */
+function fitPageToReceipt() {
+  const receipt = document.querySelector<HTMLElement>("[data-receipt]");
+  if (!receipt) return;
+  // It is hidden on screen; show it out of sight to measure it.
+  const style = receipt.style.cssText;
+  receipt.style.cssText += ";display:block;position:absolute;visibility:hidden";
+  const { width, height } = receipt.getBoundingClientRect();
+  receipt.style.cssText = style;
+  const mm = (px: number) => Math.ceil((px * 25.4) / 96);
+  // Kept after printing: the desktop app may open the print window later.
+  const page =
+    document.getElementById("receipt-page") ?? document.createElement("style");
+  page.id = "receipt-page";
+  page.textContent = `@page { size: ${mm(width) + 8}mm ${mm(height) + 10}mm; margin: 0; }`;
+  document.head.append(page);
+}
+
 /** Opens the print dialog; the desktop app's webview needs Tauri to do it. */
 export async function printPage() {
+  fitPageToReceipt();
   if (!isTauri()) return window.print();
   try {
     await invoke("print_receipt");
