@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Customer, Order, PaymentMethod, Product } from "@pos/types";
+import type {
+  Customer,
+  DuplicateSale,
+  Order,
+  PaymentMethod,
+  Product,
+} from "@pos/types";
 import { flushSync } from "react-dom";
 import Receipt from "../components/receipt";
 import {
@@ -85,6 +91,8 @@ export default function Till() {
   // A saved customer with the phone number typed in, waiting for the
   // staff member to say whether it's the same person.
   const [existing, setExisting] = useState<Customer | null>(null);
+  // An earlier sale this one matches, waiting for the seller to confirm.
+  const [duplicate, setDuplicate] = useState<DuplicateSale | null>(null);
   // The phone number already checked, so they are asked only once.
   const [checkedPhone, setCheckedPhone] = useState<string | null>(null);
 
@@ -249,6 +257,7 @@ export default function Till() {
     setCustomer(EMPTY_CUSTOMER);
     setExisting(null);
     setCheckedPhone(null);
+    setDuplicate(null);
     setCheckoutError(null);
     setStep("payment");
   };
@@ -256,7 +265,10 @@ export default function Till() {
   const customerValid =
     customer.name.trim() !== "" && customer.phone.trim() !== "";
 
-  const completeSale = async (buyer: Customer = customer) => {
+  const completeSale = async (
+    buyer: Customer = customer,
+    confirmDuplicate = false,
+  ) => {
     if (!paymentMethod || !customerValid) return;
     setCharging(true);
     setCheckoutError(null);
@@ -280,9 +292,15 @@ export default function Till() {
           paymentMethod,
           customer: buyer,
           items: lines.map((l) => orderItem(l.item, l.quantity)),
+          ...(confirmDuplicate ? { confirmDuplicate } : {}),
         }),
       });
       const body = await res.json();
+      if (res.status === 409 && body.duplicate) {
+        setDuplicate(body.duplicate);
+        return;
+      }
+      setDuplicate(null);
       if (!res.ok) throw new Error(body.error ?? "Order failed");
       // Render the receipt now so the print dialog shows this sale.
       flushSync(() => setLastOrder(body as Order));
@@ -737,6 +755,7 @@ export default function Till() {
                     onChange={(e) => {
                       setCustomer({ ...customer, phone: e.target.value });
                       setExisting(null);
+                      setDuplicate(null);
                     }}
                     className={INPUT}
                   />
@@ -792,6 +811,41 @@ export default function Till() {
                     </div>
                   </div>
                 )}
+                {duplicate && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm">
+                    <p className="font-semibold">
+                      This sale may already be recorded
+                    </p>
+                    <p className="mt-1">
+                      The same items were sold to this customer on{" "}
+                      {new Date(duplicate.createdAt).toLocaleString()}
+                      {duplicate.soldBy && ` by ${duplicate.soldBy}`} (
+                      {money.format(duplicate.total)}).
+                    </p>
+                    <p className="mt-2">Are they really buying these again?</p>
+                    <div className="mt-3 flex gap-3">
+                      <button
+                        type="button"
+                        disabled={charging}
+                        onClick={() => void completeSale(customer, true)}
+                        className={`${PRIMARY_BUTTON} flex-1`}
+                      >
+                        Yes, sell again
+                      </button>
+                      <button
+                        type="button"
+                        disabled={charging}
+                        onClick={() => {
+                          setDuplicate(null);
+                          setStep(null);
+                        }}
+                        className="flex-1 rounded-xl bg-white py-2 font-medium ring-1 ring-line-strong transition hover:bg-surface-alt disabled:opacity-40"
+                      >
+                        No, cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {checkoutError && (
                   <p className="mt-3 text-sm text-red-700">{checkoutError}</p>
                 )}
@@ -806,7 +860,9 @@ export default function Till() {
                   </button>
                   <button
                     type="submit"
-                    disabled={!customerValid || charging || !!existing}
+                    disabled={
+                      !customerValid || charging || !!existing || !!duplicate
+                    }
                     className={`${PRIMARY_BUTTON} flex-1 py-3`}
                   >
                     {charging ? "Completing…" : "Complete sale"}

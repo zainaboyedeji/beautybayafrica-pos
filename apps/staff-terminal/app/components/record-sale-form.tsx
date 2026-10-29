@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { Order, PaymentMethod, SaleChannel } from "@pos/types";
+import type {
+  DuplicateSale,
+  Order,
+  PaymentMethod,
+  SaleChannel,
+} from "@pos/types";
 import {
   API_URL,
   apiFetch,
@@ -12,6 +17,7 @@ import {
   sellables,
   useLoad,
 } from "../lib/api";
+import ConfirmDialog from "./confirm-dialog";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
 const NEW_CUSTOMER = "__new__";
@@ -70,6 +76,8 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // An earlier sale this one matches, waiting for the admin to confirm.
+  const [duplicate, setDuplicate] = useState<DuplicateSale | null>(null);
 
   // Items already on a sale being edited keep the price they were sold at,
   // and stay choosable even if their product has since been removed.
@@ -88,7 +96,9 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
   const items = [
     ...catalogItems,
     ...[...sold]
-      .filter(([key]) => catalog.data && !catalogItems.some((s) => s.key === key))
+      .filter(
+        ([key]) => catalog.data && !catalogItems.some((s) => s.key === key),
+      )
       .map(([key, i]) => ({
         key,
         name: i.name ?? "Removed product",
@@ -116,9 +126,11 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
   const updateLine = (index: number, change: Partial<Line>) =>
     setLines(lines.map((l, i) => (i === index ? { ...l, ...change } : l)));
 
-  const failure = order ? "Could not save the changes" : "Could not record sale";
+  const failure = order
+    ? "Could not save the changes"
+    : "Could not record sale";
 
-  const submit = async () => {
+  const submit = async (confirmDuplicate = false) => {
     if (!channel) {
       setError("Choose whether this sale was online or offline");
       return;
@@ -160,9 +172,15 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
           ...(date && date !== initialDate
             ? { createdAt: new Date(date).toISOString() }
             : {}),
+          ...(confirmDuplicate ? { confirmDuplicate } : {}),
         }),
       });
       const body = await res.json();
+      if (res.status === 409 && body.duplicate) {
+        setDuplicate(body.duplicate);
+        setSaving(false);
+        return;
+      }
       if (!res.ok) throw new Error(body.error ?? failure);
       onSaved(
         order
@@ -176,195 +194,218 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
   };
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <fieldset>
-        <legend className="text-sm font-medium">
-          Where was this sale made?
-        </legend>
-        <div className="mt-1 grid gap-3 sm:grid-cols-2">
-          {CHANNELS.map((c) => (
-            <label
-              key={c.value}
-              className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-colors ${
-                channel === c.value
-                  ? "border-brand bg-brand-soft/40"
-                  : "border-line-strong hover:bg-surface-alt"
-              }`}
-            >
-              <input
-                type="radio"
-                name="channel"
-                required
-                value={c.value}
-                checked={channel === c.value}
-                onChange={() => {
-                  setChannel(c.value);
-                  setError(null);
-                }}
-                className="h-4 w-4 accent-brand-deep"
-              />
-              <span>
-                <span className="block font-semibold">{c.label}</span>
-                <span className="block text-xs text-muted">{c.hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <label className="text-sm font-medium">
-          Customer
-          <select
-            value={customerPhone}
-            onChange={(e) => setCustomerPhone(e.target.value)}
-            className={INPUT}
-          >
-            <option value={NEW_CUSTOMER}>
-              {order ? "Type the details…" : "New customer…"}
-            </option>
-            {(customers.data ?? []).map((c) => (
-              <option key={c.phone} value={c.phone}>
-                {c.name} ({c.phone})
-              </option>
+    <>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <fieldset>
+          <legend className="text-sm font-medium">
+            Where was this sale made?
+          </legend>
+          <div className="mt-1 grid gap-3 sm:grid-cols-2">
+            {CHANNELS.map((c) => (
+              <label
+                key={c.value}
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-colors ${
+                  channel === c.value
+                    ? "border-brand bg-brand-soft/40"
+                    : "border-line-strong hover:bg-surface-alt"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="channel"
+                  required
+                  value={c.value}
+                  checked={channel === c.value}
+                  onChange={() => {
+                    setChannel(c.value);
+                    setError(null);
+                  }}
+                  className="h-4 w-4 accent-brand-deep"
+                />
+                <span>
+                  <span className="block font-semibold">{c.label}</span>
+                  <span className="block text-xs text-muted">{c.hint}</span>
+                </span>
+              </label>
             ))}
-          </select>
-        </label>
-        <label className="text-sm font-medium">
-          Payment method
-          <select
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-            className={INPUT}
-          >
-            <option value="transfer">Bank transfer</option>
-            <option value="card">Card</option>
-          </select>
-        </label>
-        <label className="text-sm font-medium">
-          Sale date <span className="font-normal text-muted">(optional)</span>
-          <input
-            type="datetime-local"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className={INPUT}
-          />
-        </label>
-      </div>
+          </div>
+        </fieldset>
 
-      {customerPhone === NEW_CUSTOMER && (
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           <label className="text-sm font-medium">
-            Full name
-            <input
-              required
-              value={newCustomer.name}
-              onChange={(e) =>
-                setNewCustomer({ ...newCustomer, name: e.target.value })
-              }
-              className={INPUT}
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Phone number
-            <input
-              required
-              type="tel"
-              value={newCustomer.phone}
-              onChange={(e) =>
-                setNewCustomer({ ...newCustomer, phone: e.target.value })
-              }
-              className={INPUT}
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Email <span className="font-normal text-muted">(optional)</span>
-            <input
-              type="email"
-              value={newCustomer.email}
-              onChange={(e) =>
-                setNewCustomer({ ...newCustomer, email: e.target.value })
-              }
-              className={INPUT}
-            />
-          </label>
-        </div>
-      )}
-
-      <p className="mt-4 text-sm font-medium">Items</p>
-      {lines.map((line, index) => (
-        <div key={index} className="mt-2 flex gap-3">
-          {/* Widths sit on wrappers: INPUT's w-full would beat them otherwise. */}
-          <div className="min-w-0 flex-1">
+            Customer
             <select
-              required
-              aria-label={`Product ${index + 1}`}
-              value={line.key}
-              onChange={(e) => updateLine(index, { key: e.target.value })}
-              className={`${INPUT} mt-0`}
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              className={INPUT}
             >
-              <option value="">Choose a product…</option>
-              {items.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.name} — {money.format(s.price)} ({stock[s.key] ?? 0} in
-                  stock)
+              <option value={NEW_CUSTOMER}>
+                {order ? "Type the details…" : "New customer…"}
+              </option>
+              {(customers.data ?? []).map((c) => (
+                <option key={c.phone} value={c.phone}>
+                  {c.name} ({c.phone})
                 </option>
               ))}
             </select>
-          </div>
-          <div className="w-24 shrink-0">
+          </label>
+          <label className="text-sm font-medium">
+            Payment method
+            <select
+              value={paymentMethod}
+              onChange={(e) =>
+                setPaymentMethod(e.target.value as PaymentMethod)
+              }
+              className={INPUT}
+            >
+              <option value="transfer">Bank transfer</option>
+              <option value="card">Card</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Sale date <span className="font-normal text-muted">(optional)</span>
             <input
-              required
-              type="number"
-              min={1}
-              step={1}
-              aria-label={`Quantity ${index + 1}`}
-              value={line.quantity}
-              onChange={(e) => updateLine(index, { quantity: e.target.value })}
-              className={`${INPUT} mt-0`}
+              type="datetime-local"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className={INPUT}
             />
+          </label>
+        </div>
+
+        {customerPhone === NEW_CUSTOMER && (
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <label className="text-sm font-medium">
+              Full name
+              <input
+                required
+                value={newCustomer.name}
+                onChange={(e) =>
+                  setNewCustomer({ ...newCustomer, name: e.target.value })
+                }
+                className={INPUT}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Phone number
+              <input
+                required
+                type="tel"
+                value={newCustomer.phone}
+                onChange={(e) =>
+                  setNewCustomer({ ...newCustomer, phone: e.target.value })
+                }
+                className={INPUT}
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Email <span className="font-normal text-muted">(optional)</span>
+              <input
+                type="email"
+                value={newCustomer.email}
+                onChange={(e) =>
+                  setNewCustomer({ ...newCustomer, email: e.target.value })
+                }
+                className={INPUT}
+              />
+            </label>
           </div>
-          <button
-            type="button"
-            disabled={lines.length === 1}
-            onClick={() => setLines(lines.filter((_, i) => i !== index))}
-            className="rounded-md px-3 text-sm text-muted hover:bg-brand-soft disabled:opacity-40"
-          >
-            Remove
+        )}
+
+        <p className="mt-4 text-sm font-medium">Items</p>
+        {lines.map((line, index) => (
+          <div key={index} className="mt-2 flex gap-3">
+            {/* Widths sit on wrappers: INPUT's w-full would beat them otherwise. */}
+            <div className="min-w-0 flex-1">
+              <select
+                required
+                aria-label={`Product ${index + 1}`}
+                value={line.key}
+                onChange={(e) => updateLine(index, { key: e.target.value })}
+                className={`${INPUT} mt-0`}
+              >
+                <option value="">Choose a product…</option>
+                {items.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.name} — {money.format(s.price)} ({stock[s.key] ?? 0} in
+                    stock)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-24 shrink-0">
+              <input
+                required
+                type="number"
+                min={1}
+                step={1}
+                aria-label={`Quantity ${index + 1}`}
+                value={line.quantity}
+                onChange={(e) =>
+                  updateLine(index, { quantity: e.target.value })
+                }
+                className={`${INPUT} mt-0`}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={lines.length === 1}
+              onClick={() => setLines(lines.filter((_, i) => i !== index))}
+              className="rounded-md px-3 text-sm text-muted hover:bg-brand-soft disabled:opacity-40"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => setLines([...lines, EMPTY_LINE])}
+          className="mt-3 text-sm font-medium text-brand-deep underline"
+        >
+          + Add another item
+        </button>
+
+        {(catalog.failed || customers.failed) && (
+          <p className="mt-3 text-sm text-red-700">
+            Cannot reach the sync API at {API_URL}.
+          </p>
+        )}
+        {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <span className="mr-auto text-lg font-semibold">
+            Total: {money.format(total)}
+          </span>
+          <button type="button" onClick={onCancel} className={SECONDARY_BUTTON}>
+            Cancel
+          </button>
+          <button type="submit" disabled={saving} className={PRIMARY_BUTTON}>
+            {saving ? "Saving…" : order ? "Save changes" : "Record sale"}
           </button>
         </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => setLines([...lines, EMPTY_LINE])}
-        className="mt-3 text-sm font-medium text-brand-deep underline"
-      >
-        + Add another item
-      </button>
-
-      {(catalog.failed || customers.failed) && (
-        <p className="mt-3 text-sm text-red-700">
-          Cannot reach the sync API at {API_URL}.
-        </p>
+      </form>
+      {duplicate && (
+        <ConfirmDialog
+          title="Record this sale again?"
+          message={
+            `A sale of the same items to this customer was already recorded on ` +
+            `${new Date(duplicate.createdAt).toLocaleString()}` +
+            (duplicate.soldBy ? ` by ${duplicate.soldBy}` : "") +
+            ` (${money.format(duplicate.total)}). Only record it again if the customer really bought these twice.`
+          }
+          confirmLabel="Yes, record it again"
+          onConfirm={async () => {
+            setDuplicate(null);
+            await submit(true);
+          }}
+          onClose={() => setDuplicate(null)}
+        />
       )}
-      {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
-
-      <div className="mt-5 flex items-center justify-end gap-3">
-        <span className="mr-auto text-lg font-semibold">
-          Total: {money.format(total)}
-        </span>
-        <button type="button" onClick={onCancel} className={SECONDARY_BUTTON}>
-          Cancel
-        </button>
-        <button type="submit" disabled={saving} className={PRIMARY_BUTTON}>
-          {saving ? "Saving…" : order ? "Save changes" : "Record sale"}
-        </button>
-      </div>
-    </form>
+    </>
   );
 }

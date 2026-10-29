@@ -139,6 +139,17 @@ export interface Order {
   refund?: SaleRefund;
 }
 
+/**
+ * The earlier sale a new one matches (same customer phone and items, within
+ * a day), sent back so the seller can confirm it isn't entered twice.
+ */
+export interface DuplicateSale {
+  createdAt: string;
+  /** Who recorded it, when known. */
+  soldBy?: string;
+  total: number;
+}
+
 export interface SaleRefund {
   at: string;
   /** Who refunded it. */

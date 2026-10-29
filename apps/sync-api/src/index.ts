@@ -14,6 +14,7 @@ import type {
   ActivityEntry,
   CloudinaryUrl,
   Customer,
+  DuplicateSale,
   Expense,
   ExpensePaymentMethod,
   Inventory,
@@ -1372,11 +1373,78 @@ const saleDetails = (body: Record<string, unknown> | undefined) => {
   return { paymentMethod, name, phone, email, createdAt };
 };
 
+/** A sale's items as text, so two sales of the same things compare equal. */
+const itemsKey = (lines: { productId: string; variantId?: string; quantity: number }[]) => {
+  const quantities = new Map<string, number>();
+  for (const line of lines) {
+    const key = `${line.productId}/${line.variantId ?? ""}`;
+    quantities.set(key, (quantities.get(key) ?? 0) + line.quantity);
+  }
+  return [...quantities]
+    .map(([key, quantity]) => `${key}*${quantity}`)
+    .sort()
+    .join(",");
+};
+
+/**
+ * A sale (not refunded) to the same phone number of exactly the same items
+ * within a day either side of `at`: most likely the same sale entered twice.
+ */
+const findDuplicate = async (
+  phone: string,
+  lines: { productId: string; variantId?: string; quantity: number }[],
+  at: Date,
+): Promise<DuplicateSale | null> => {
+  const { rows } = await db.query<{
+    created_at: Date;
+    sold_by_name: string | null;
+    total: number;
+    items: { productId: string; variantId?: string; quantity: number }[];
+  }>(
+    `SELECT o.created_at, o.sold_by_name, o.total,
+       json_agg(json_strip_nulls(json_build_object('productId', i.product_id,
+         'variantId', i.variant_id, 'quantity', i.quantity))) AS items
+     FROM orders o JOIN order_items i ON i.order_id = o.id
+     WHERE regexp_replace(o.customer_phone, '\\s+', '', 'g') = $1
+       AND o.refunded_at IS NULL
+       AND o.created_at BETWEEN $2::timestamptz - interval '1 day'
+         AND $2::timestamptz + interval '1 day'
+     GROUP BY o.id ORDER BY o.created_at DESC`,
+    [phoneKey(phone), at],
+  );
+  const wanted = itemsKey(lines);
+  const match = rows.find((row) => itemsKey(row.items) === wanted);
+  return match
+    ? {
+        createdAt: match.created_at.toISOString(),
+        ...(match.sold_by_name ? { soldBy: match.sold_by_name } : {}),
+        total: match.total,
+      }
+    : null;
+};
+
 app.post("/orders", anyone, async (req, res) => {
   const requested = requestedLines(req.body?.items);
   const { paymentMethod, name, phone, email, ...details } = saleDetails(req.body);
   // Sales recorded in the back office may carry the date they happened.
   const createdAt = details.createdAt ?? new Date();
+
+  // Asks before saving what looks like a sale already recorded. Two tills
+  // sending the same sale at the very same moment can still both get in.
+  if (req.body?.confirmDuplicate !== true) {
+    const duplicate = await findDuplicate(
+      phone,
+      requested.map((l) => ({ ...l, variantId: l.variantId || undefined })),
+      createdAt,
+    );
+    if (duplicate) {
+      res.status(409).json({
+        error: "This looks like a sale that was already recorded",
+        duplicate,
+      });
+      return;
+    }
+  }
 
   const session = sessionOf(res);
   // The till sends no channel, so its sales are offline. Only the admin,
