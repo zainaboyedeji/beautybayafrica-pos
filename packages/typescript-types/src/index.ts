@@ -152,6 +152,7 @@ export type ActivityAction =
   | "login_failed"
   | "sale"
   | "sale_refunded"
+  | "sale_edited"
   | "product_added"
   | "product_updated"
   | "inventory_imported"

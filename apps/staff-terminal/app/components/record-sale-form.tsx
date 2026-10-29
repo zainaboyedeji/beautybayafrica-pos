@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { PaymentMethod, SaleChannel } from "@pos/types";
+import type { Order, PaymentMethod, SaleChannel } from "@pos/types";
 import {
   API_URL,
   apiFetch,
@@ -9,7 +9,6 @@ import {
   fetchCatalog,
   fetchCustomers,
   money,
-  orderItem,
   sellables,
   useLoad,
 } from "../lib/api";
@@ -27,28 +26,87 @@ const CHANNELS: { value: SaleChannel; label: string; hint: string }[] = [
   { value: "online", label: "Online", hint: "Website, Instagram, WhatsApp…" },
 ];
 
-type Props = { onSaved: (message: string) => void; onCancel: () => void };
+type Props = {
+  /** A sale to correct; without one, the form records a new sale. */
+  order?: Order;
+  onSaved: (message: string) => void;
+  onCancel: () => void;
+};
 
-export default function RecordSaleForm({ onSaved, onCancel }: Props) {
+/** An ISO time as a datetime-local input's value, in local time. */
+const toLocalInput = (iso: string) => {
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+};
+
+export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
   const catalog = useLoad(fetchCatalog);
   const customers = useLoad(fetchCustomers);
 
   const [customerPhone, setCustomerPhone] = useState(NEW_CUSTOMER);
   const [newCustomer, setNewCustomer] = useState({
-    name: "",
-    phone: "",
-    email: "",
+    name: order?.customer.name ?? "",
+    phone: order?.customer.phone ?? "",
+    email: order?.customer.email ?? "",
   });
   // Left unset so the admin has to say where the sale happened.
-  const [channel, setChannel] = useState<SaleChannel | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("transfer");
-  const [date, setDate] = useState("");
-  const [lines, setLines] = useState<Line[]>([EMPTY_LINE]);
+  const [channel, setChannel] = useState<SaleChannel | null>(
+    order?.channel ?? null,
+  );
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    order?.paymentMethod ?? "transfer",
+  );
+  const initialDate = order ? toLocalInput(order.createdAt) : "";
+  const [date, setDate] = useState(initialDate);
+  const [lines, setLines] = useState<Line[]>(
+    order
+      ? order.items.map((i) => ({
+          key: i.variantId ?? i.productId,
+          quantity: String(i.quantity),
+        }))
+      : [EMPTY_LINE],
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const items = (catalog.data?.products ?? []).flatMap(sellables);
-  const stock = catalog.data?.stock ?? {};
+  // Items already on a sale being edited keep the price they were sold at,
+  // and stay choosable even if their product has since been removed.
+  const sold = new Map(
+    (order?.items ?? []).map((i) => [i.variantId ?? i.productId, i]),
+  );
+  const catalogItems = (catalog.data?.products ?? [])
+    .flatMap(sellables)
+    .map((s) => ({
+      key: s.key,
+      name: s.name,
+      price: sold.get(s.key)?.unitPrice ?? s.price,
+      productId: s.product.id,
+      variantId: s.variant?.id,
+    }));
+  const items = [
+    ...catalogItems,
+    ...[...sold]
+      .filter(([key]) => catalog.data && !catalogItems.some((s) => s.key === key))
+      .map(([key, i]) => ({
+        key,
+        name: i.name ?? "Removed product",
+        price: i.unitPrice,
+        productId: i.productId,
+        variantId: i.variantId,
+      })),
+  ];
+  // What this sale already holds is available to it too.
+  const stock = Object.fromEntries(
+    items.map((s) => [
+      s.key,
+      (catalog.data?.stock[s.key] ?? 0) +
+        (order?.items ?? [])
+          .filter((i) => (i.variantId ?? i.productId) === s.key)
+          .reduce((sum, i) => sum + i.quantity, 0),
+    ]),
+  );
 
   const total = lines.reduce((sum, line) => {
     const item = items.find((s) => s.key === line.key);
@@ -57,6 +115,8 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
 
   const updateLine = (index: number, change: Partial<Line>) =>
     setLines(lines.map((l, i) => (i === index ? { ...l, ...change } : l)));
+
+  const failure = order ? "Could not save the changes" : "Could not record sale";
 
   const submit = async () => {
     if (!channel) {
@@ -81,29 +141,36 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
         );
       }
 
-      const res = await apiFetch("/orders", {
-        method: "POST",
+      const res = await apiFetch(order ? `/orders/${order.id}` : "/orders", {
+        method: order ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentMethod,
           channel,
           customer,
-          items: [...quantities].map(([key, quantity]) =>
-            orderItem(
-              items.find((s) => s.key === key)!,
+          items: [...quantities].map(([key, quantity]) => {
+            const item = items.find((s) => s.key === key)!;
+            return {
+              productId: item.productId,
+              ...(item.variantId ? { variantId: item.variantId } : {}),
               quantity,
-            ),
-          ),
-          ...(date ? { createdAt: new Date(date).toISOString() } : {}),
+            };
+          }),
+          // An unchanged date is left alone, so it keeps its seconds.
+          ...(date && date !== initialDate
+            ? { createdAt: new Date(date).toISOString() }
+            : {}),
         }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not record sale");
+      if (!res.ok) throw new Error(body.error ?? failure);
       onSaved(
-        `${channel === "online" ? "Online" : "Offline"} sale of ${money.format(body.total)} recorded for ${body.customer.name}.`,
+        order
+          ? `Sale to ${customer.name} updated: now ${money.format(body.total)}.`
+          : `${channel === "online" ? "Online" : "Offline"} sale of ${money.format(body.total)} recorded for ${body.customer.name}.`,
       );
     } catch (e) {
-      setError(describeError(e, "Could not record sale"));
+      setError(describeError(e, failure));
       setSaving(false);
     }
   };
@@ -158,7 +225,9 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
             onChange={(e) => setCustomerPhone(e.target.value)}
             className={INPUT}
           >
-            <option value={NEW_CUSTOMER}>New customer…</option>
+            <option value={NEW_CUSTOMER}>
+              {order ? "Type the details…" : "New customer…"}
+            </option>
             {(customers.data ?? []).map((c) => (
               <option key={c.phone} value={c.phone}>
                 {c.name} ({c.phone})
@@ -293,7 +362,7 @@ export default function RecordSaleForm({ onSaved, onCancel }: Props) {
           Cancel
         </button>
         <button type="submit" disabled={saving} className={PRIMARY_BUTTON}>
-          {saving ? "Saving…" : "Record sale"}
+          {saving ? "Saving…" : order ? "Save changes" : "Record sale"}
         </button>
       </div>
     </form>

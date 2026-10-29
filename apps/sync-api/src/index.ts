@@ -1196,6 +1196,22 @@ app.get("/orders", adminOnly, async (req, res) => {
   );
 });
 
+/** Puts `quantity` of a product (or one of its options) back into stock. */
+const putBack = (
+  client: PoolClient,
+  productId: string,
+  variantId: string | null | undefined,
+  quantity: number,
+) =>
+  client.query(
+    variantId
+      ? `UPDATE product_variants SET quantity = quantity + $2, updated_at = now()
+         WHERE id = $1`
+      : `UPDATE products SET quantity = quantity + $2, updated_at = now()
+         WHERE id = $1`,
+    [variantId || productId, quantity],
+  );
+
 // Refunds a whole sale: it is marked refunded (and so leaves every total) and
 // its items go back into stock. A product or option removed since then just
 // doesn't get its stock back.
@@ -1229,16 +1245,8 @@ app.post("/orders/:id/refund", adminOnly, async (req, res) => {
     }>("SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1", [
       req.params.id,
     ]);
-    for (const item of items) {
-      await client.query(
-        item.variant_id
-          ? `UPDATE product_variants SET quantity = quantity + $2, updated_at = now()
-             WHERE id = $1`
-          : `UPDATE products SET quantity = quantity + $2, updated_at = now()
-             WHERE id = $1`,
-        [item.variant_id ?? item.product_id, item.quantity],
-      );
-    }
+    for (const item of items)
+      await putBack(client, item.product_id, item.variant_id, item.quantity);
     return rows[0];
   });
   await logBy(
@@ -1287,36 +1295,88 @@ const takeVariant = async (
   };
 };
 
+/** Takes `quantity` of a product without options out of stock and returns its sale line. */
+const takeProduct = async (
+  client: PoolClient,
+  productId: string,
+  quantity: number,
+): Promise<OrderItem> => {
+  const { rows } = await client.query<ProductRow>(
+    `UPDATE products SET quantity = quantity - $2, updated_at = now()
+     WHERE id = $1 AND quantity >= $2 RETURNING *`,
+    [productId, quantity],
+  );
+  if (rows.length === 0) {
+    const found = await client.query<{ name: string; has_options: boolean }>(
+      `SELECT name, EXISTS (SELECT 1 FROM product_variants WHERE product_id = $1)
+         AS has_options
+       FROM products WHERE id = $1`,
+      [productId],
+    );
+    const product = found.rows[0];
+    throw !product
+      ? new HttpError(400, "Invalid order item")
+      : product.has_options
+        ? new HttpError(400, `Choose an option for ${product.name}`)
+        : new HttpError(409, `Not enough stock for ${product.name}`);
+  }
+  const product = rows[0];
+  return {
+    productId: product.id,
+    name: product.name,
+    quantity,
+    unitPrice: product.price,
+    ...(product.cost_price !== null ? { unitCost: product.cost_price } : {}),
+  };
+};
+
+const takeItem = (client: PoolClient, productId: string, variantId: string, quantity: number) =>
+  variantId
+    ? takeVariant(client, productId, variantId, quantity)
+    : takeProduct(client, productId, quantity);
+
+/** The product, option and quantity of each line a sale is sent with. */
+const requestedLines = (requested: unknown) => {
+  if (!Array.isArray(requested) || requested.length === 0)
+    throw new HttpError(400, "Order must contain at least one item");
+  return requested.map((line) => {
+    const quantity = Number(line?.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0)
+      throw new HttpError(400, "Invalid order item");
+    return {
+      productId: String(line?.productId ?? ""),
+      variantId: String(line?.variantId ?? ""),
+      quantity,
+    };
+  });
+};
+
+/** The payment method, customer and (optional) date a sale is sent with. */
+const saleDetails = (body: Record<string, unknown> | undefined) => {
+  const paymentMethod = body?.paymentMethod as PaymentMethod;
+  if (paymentMethod !== "transfer" && paymentMethod !== "card")
+    throw new HttpError(400, "Payment method must be transfer or card");
+
+  const customer = (body?.customer ?? {}) as Record<string, unknown>;
+  const name = String(customer.name ?? "").trim();
+  const phone = String(customer.phone ?? "").trim();
+  const email = String(customer.email ?? "").trim();
+  if (!name || !phone) throw new HttpError(400, "Customer name and phone are required");
+
+  let createdAt: Date | null = null;
+  if (body?.createdAt) {
+    createdAt = new Date(String(body.createdAt));
+    if (Number.isNaN(createdAt.getTime()) || createdAt.getTime() > Date.now())
+      throw new HttpError(400, "Sale date must be a valid past date");
+  }
+  return { paymentMethod, name, phone, email, createdAt };
+};
+
 app.post("/orders", anyone, async (req, res) => {
-  const requested: unknown = req.body?.items;
-  if (!Array.isArray(requested) || requested.length === 0) {
-    res.status(400).json({ error: "Order must contain at least one item" });
-    return;
-  }
-
-  const paymentMethod: unknown = req.body?.paymentMethod;
-  if (paymentMethod !== "transfer" && paymentMethod !== "card") {
-    res.status(400).json({ error: "Payment method must be transfer or card" });
-    return;
-  }
-
-  const name = String(req.body?.customer?.name ?? "").trim();
-  const phone = String(req.body?.customer?.phone ?? "").trim();
-  const email = String(req.body?.customer?.email ?? "").trim();
-  if (!name || !phone) {
-    res.status(400).json({ error: "Customer name and phone are required" });
-    return;
-  }
-
+  const requested = requestedLines(req.body?.items);
+  const { paymentMethod, name, phone, email, ...details } = saleDetails(req.body);
   // Sales recorded in the back office may carry the date they happened.
-  let createdAt = new Date();
-  if (req.body?.createdAt) {
-    createdAt = new Date(String(req.body.createdAt));
-    if (Number.isNaN(createdAt.getTime()) || createdAt.getTime() > Date.now()) {
-      res.status(400).json({ error: "Sale date must be a valid past date" });
-      return;
-    }
-  }
+  const createdAt = details.createdAt ?? new Date();
 
   const session = sessionOf(res);
   // The till sends no channel, so its sales are offline. Only the admin,
@@ -1333,43 +1393,8 @@ app.post("/orders", anyone, async (req, res) => {
   // selling the last item at once can't both succeed.
   const order = await transaction(async (client) => {
     const items: OrderItem[] = [];
-    for (const line of requested) {
-      const productId = String(line?.productId ?? "");
-      const variantId = String(line?.variantId ?? "");
-      const quantity = Number(line?.quantity);
-      if (!Number.isInteger(quantity) || quantity <= 0)
-        throw new HttpError(400, "Invalid order item");
-      if (variantId) {
-        items.push(await takeVariant(client, productId, variantId, quantity));
-        continue;
-      }
-      const { rows } = await client.query<ProductRow>(
-        `UPDATE products SET quantity = quantity - $2, updated_at = now()
-         WHERE id = $1 AND quantity >= $2 RETURNING *`,
-        [productId, quantity],
-      );
-      if (rows.length === 0) {
-        const found = await client.query<{ name: string; has_options: boolean }>(
-          `SELECT name, EXISTS (SELECT 1 FROM product_variants WHERE product_id = $1)
-             AS has_options
-           FROM products WHERE id = $1`,
-          [productId],
-        );
-        const product = found.rows[0];
-        throw !product
-          ? new HttpError(400, "Invalid order item")
-          : product.has_options
-            ? new HttpError(400, `Choose an option for ${product.name}`)
-            : new HttpError(409, `Not enough stock for ${product.name}`);
-      }
-      const product = rows[0];
-      items.push({
-        productId: product.id,
-        name: product.name,
-        quantity,
-        unitPrice: product.price,
-        ...(product.cost_price !== null ? { unitCost: product.cost_price } : {}),
-      });
+    for (const { productId, variantId, quantity } of requested) {
+      items.push(await takeItem(client, productId, variantId, quantity));
     }
 
     // Save the customer. A phone number already saved keeps its customer's
@@ -1388,7 +1413,7 @@ app.post("/orders", anyone, async (req, res) => {
       id: randomUUID(),
       items,
       total: Math.round(total * 100) / 100,
-      paymentMethod: paymentMethod satisfies PaymentMethod,
+      paymentMethod,
       channel,
       customer,
       soldBy,
@@ -1439,6 +1464,129 @@ app.post("/orders", anyone, async (req, res) => {
       (req.body?.createdAt ? `, dated ${createdAt.toLocaleDateString("en-NG")}` : ""),
   );
   res.status(201).json(order);
+});
+
+// Corrects a sale recorded with a mistake: its customer, payment, channel,
+// date and items. Stock moves by however much each item's quantity changed.
+// Items already on the sale keep the price they were sold at; items added
+// are charged at today's price. Who made the sale doesn't change, and a
+// refunded sale can't be edited.
+app.put("/orders/:id", adminOnly, async (req, res) => {
+  const requested = requestedLines(req.body?.items);
+  const { paymentMethod, name, phone, email, createdAt } = saleDetails(req.body);
+  const channel: SaleChannel = req.body?.channel === "online" ? "online" : "offline";
+  const lineKey = (productId: string, variantId?: string | null) =>
+    `${productId}/${variantId ?? ""}`;
+
+  const order = await transaction(async (client) => {
+    // Locks the sale, so it can't be refunded or edited twice at once.
+    const { rows } = await client.query<{ refunded_at: Date | null; created_at: Date }>(
+      "SELECT refunded_at, created_at FROM orders WHERE id = $1 FOR UPDATE",
+      [req.params.id],
+    );
+    if (!rows[0]) throw new HttpError(404, "Sale not found");
+    if (rows[0].refunded_at) throw new HttpError(409, "A refunded sale can't be edited");
+
+    const { rows: oldLines } = await client.query<{
+      product_id: string;
+      variant_id: string | null;
+      name: string | null;
+      quantity: number;
+      unit_price: number;
+      unit_cost: number | null;
+    }>("SELECT * FROM order_items WHERE order_id = $1 ORDER BY line", [req.params.id]);
+    const sold = new Map<string, OrderItem>();
+    for (const line of oldLines) {
+      const key = lineKey(line.product_id, line.variant_id);
+      const before = sold.get(key);
+      if (before) {
+        before.quantity += line.quantity;
+        continue;
+      }
+      sold.set(key, {
+        productId: line.product_id,
+        ...(line.variant_id ? { variantId: line.variant_id } : {}),
+        ...(line.name !== null ? { name: line.name } : {}),
+        quantity: line.quantity,
+        unitPrice: line.unit_price,
+        ...(line.unit_cost !== null ? { unitCost: line.unit_cost } : {}),
+      });
+    }
+
+    // Combine repeated items into one line each.
+    const wanted = new Map<string, (typeof requested)[number]>();
+    for (const line of requested) {
+      const key = lineKey(line.productId, line.variantId);
+      const before = wanted.get(key);
+      wanted.set(key, before ? { ...line, quantity: before.quantity + line.quantity } : line);
+    }
+
+    const items: OrderItem[] = [];
+    for (const [key, line] of wanted) {
+      const before = sold.get(key);
+      if (!before) {
+        items.push(await takeItem(client, line.productId, line.variantId, line.quantity));
+        continue;
+      }
+      const extra = line.quantity - before.quantity;
+      if (extra > 0) await takeItem(client, line.productId, line.variantId, extra);
+      if (extra < 0) await putBack(client, line.productId, line.variantId, -extra);
+      items.push({ ...before, quantity: line.quantity });
+    }
+    for (const [key, before] of sold)
+      if (!wanted.has(key))
+        await putBack(client, before.productId, before.variantId, before.quantity);
+
+    // A new phone number is saved as a customer; a saved one is left as is.
+    await client.query(
+      `INSERT INTO customers (phone_key, name, phone, email) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (phone_key) DO NOTHING`,
+      [phoneKey(phone), name, phone, email || null],
+    );
+
+    const total =
+      Math.round(items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0) * 100) / 100;
+    await client.query(
+      `UPDATE orders SET total = $2, payment_method = $3, channel = $4, customer_name = $5,
+         customer_phone = $6, customer_email = $7, created_at = $8
+       WHERE id = $1`,
+      [
+        req.params.id,
+        total,
+        paymentMethod,
+        channel,
+        name,
+        phone,
+        email || null,
+        createdAt ?? rows[0].created_at,
+      ],
+    );
+    await client.query("DELETE FROM order_items WHERE order_id = $1", [req.params.id]);
+    for (const [line, item] of items.entries()) {
+      await client.query(
+        `INSERT INTO order_items (order_id, line, product_id, variant_id, name, quantity, unit_price, unit_cost)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          req.params.id,
+          line,
+          item.productId,
+          item.variantId ?? null,
+          item.name ?? null,
+          item.quantity,
+          item.unitPrice,
+          item.unitCost ?? null,
+        ],
+      );
+    }
+    return { total, createdAt: createdAt ?? rows[0].created_at };
+  });
+  await logBy(
+    res,
+    "sale_edited",
+    `Edited ${name}'s sale of ${order.createdAt.toLocaleDateString("en-NG", { timeZone: "Africa/Lagos" })}: ` +
+      `now ${naira.format(order.total)} (${paymentMethod === "card" ? "card" : "bank transfer"}, ${channel})`,
+  );
+  res.json({ total: order.total });
 });
 
 // --- Suppliers, expenses and store requests -------------------------------

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import type { Order, SaleChannel } from "@pos/types";
 import ConfirmDialog from "../../components/confirm-dialog";
+import Modal from "../../components/modal";
+import RecordSaleForm from "../../components/record-sale-form";
 import Receipt from "../../components/receipt";
 import { printOrderReceipt } from "../../lib/print";
 import PrinterSettings, {
@@ -64,6 +66,7 @@ export default function SalesPage() {
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<"" | SaleChannel>("");
   const [refunding, setRefunding] = useState<Order | null>(null);
+  const [editing, setEditing] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [printing, setPrinting] = useState<Order | null>(null);
   const desktopApp = useDesktopApp();
@@ -163,6 +166,20 @@ export default function SalesPage() {
             onClose={() => setRefunding(null)}
           />
         )}
+        {editing && (
+          <Modal title="Edit sale" onClose={() => setEditing(null)} wide>
+            <RecordSaleForm
+              order={editing}
+              onSaved={(message) => {
+                setEditing(null);
+                setNotice(message);
+                void orders.reload();
+                void catalog.reload();
+              }}
+              onCancel={() => setEditing(null)}
+            />
+          </Modal>
+        )}
         <ActionModals
           open={modal}
           onClose={() => setModal(null)}
@@ -228,7 +245,7 @@ export default function SalesPage() {
                     <th className="px-4 py-3">Sold by</th>
                     <th className="px-4 py-3 text-right">Total</th>
                     <th className="px-4 py-3">
-                      <span className="sr-only">Receipt and refund</span>
+                      <span className="sr-only">Receipt, edit and refund</span>
                     </th>
                   </tr>
                 </thead>
@@ -293,12 +310,20 @@ export default function SalesPage() {
                             Refunded
                           </span>
                         ) : (
-                          <button
-                            onClick={() => setRefunding(order)}
-                            className="font-medium text-red-700 hover:underline"
-                          >
-                            Refund
-                          </button>
+                          <>
+                            <button
+                              onClick={() => setEditing(order)}
+                              className="mr-4 font-medium text-brand-deep hover:underline"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setRefunding(order)}
+                              className="font-medium text-red-700 hover:underline"
+                            >
+                              Refund
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>

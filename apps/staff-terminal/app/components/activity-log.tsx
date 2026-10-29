@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   login_failed: "Failed login",
   sale: "Sale",
   sale_refunded: "Refund",
+  sale_edited: "Sale edited",
   product_added: "Product added",
   product_updated: "Product edited",
   inventory_imported: "CSV upload",
@@ -36,7 +37,7 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
 
 const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
   logins: { label: "Logins", actions: ["login", "login_failed"] },
-  sales: { label: "Sales", actions: ["sale", "sale_refunded"] },
+  sales: { label: "Sales", actions: ["sale", "sale_refunded", "sale_edited"] },
   inventory: {
     label: "Inventory",
     actions: ["product_added", "product_updated", "inventory_imported"],
