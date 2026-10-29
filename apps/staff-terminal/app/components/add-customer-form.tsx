@@ -1,13 +1,30 @@
 "use client";
 
 import { useState } from "react";
+import type { Customer } from "@pos/types";
 import { apiFetch, describeError } from "../lib/api";
 import { INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./form-styles";
 
-type Props = { onSaved: (message: string) => void; onCancel: () => void };
+type Props = {
+  /** A saved customer to change; without one, the form adds a new customer. */
+  customer?: Customer;
+  onSaved: (message: string) => void;
+  onCancel: () => void;
+};
 
-export default function AddCustomerForm({ onSaved, onCancel }: Props) {
-  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+export default function AddCustomerForm({
+  customer,
+  onSaved,
+  onCancel,
+}: Props) {
+  const [form, setForm] = useState({
+    name: customer?.name ?? "",
+    phone: customer?.phone ?? "",
+    email: customer?.email ?? "",
+  });
+  const failure = customer
+    ? "Could not save the changes"
+    : "Could not add customer";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,16 +32,23 @@ export default function AddCustomerForm({ onSaved, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const res = await apiFetch("/customers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      const res = await apiFetch(
+        customer
+          ? `/customers/${encodeURIComponent(customer.phone)}`
+          : "/customers",
+        {
+          method: customer ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        },
+      );
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not add customer");
-      onSaved(`${body.name} added.`);
+      if (!res.ok) throw new Error(body.error ?? failure);
+      onSaved(
+        customer ? `${body.name}'s details saved.` : `${body.name} added.`,
+      );
     } catch (e) {
-      setError(describeError(e, "Could not add customer"));
+      setError(describeError(e, failure));
       setSaving(false);
     }
   };
@@ -72,7 +96,7 @@ export default function AddCustomerForm({ onSaved, onCancel }: Props) {
           Cancel
         </button>
         <button type="submit" disabled={saving} className={PRIMARY_BUTTON}>
-          {saving ? "Saving…" : "Add customer"}
+          {saving ? "Saving…" : customer ? "Save changes" : "Add customer"}
         </button>
       </div>
     </form>

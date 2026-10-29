@@ -168,6 +168,7 @@ export type ActivityAction =
   | "product_updated"
   | "inventory_imported"
   | "customer_added"
+  | "customer_updated"
   | "staff_added"
   | "staff_updated"
   | "staff_removed"

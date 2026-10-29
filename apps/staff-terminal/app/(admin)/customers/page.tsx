@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import type { Customer } from "@pos/types";
 import ActionModals, {
   Notice,
   type ActionModal,
 } from "../../components/action-modals";
+import AddCustomerForm from "../../components/add-customer-form";
+import Modal from "../../components/modal";
 import {
   PRIMARY_BUTTON,
   TABLE,
@@ -29,6 +32,7 @@ export default function CustomersPage() {
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<Customer | null>(null);
 
   const rows =
     customers.data && orders.data
@@ -57,6 +61,20 @@ export default function CustomersPage() {
           void customers.reload();
         }}
       />
+      {editing && (
+        <Modal title="Edit customer" onClose={() => setEditing(null)}>
+          <AddCustomerForm
+            customer={editing}
+            onSaved={(message) => {
+              setEditing(null);
+              setNotice(message);
+              void customers.reload();
+              void orders.reload();
+            }}
+            onCancel={() => setEditing(null)}
+          />
+        </Modal>
+      )}
 
       <div className="mt-6">
         <SearchBox
@@ -86,6 +104,9 @@ export default function CustomersPage() {
                   <th className="px-4 py-3 text-right">Purchases</th>
                   <th className="px-4 py-3 text-right">Total spent</th>
                   <th className="px-4 py-3">Last purchase</th>
+                  <th className="px-4 py-3">
+                    <span className="sr-only">Edit</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -102,6 +123,20 @@ export default function CustomersPage() {
                       {c.lastPurchase
                         ? new Date(c.lastPurchase).toLocaleString()
                         : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() =>
+                          setEditing({
+                            name: c.name,
+                            phone: c.phone,
+                            ...(c.email ? { email: c.email } : {}),
+                          })
+                        }
+                        className="font-medium text-brand-deep hover:underline"
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 ))}

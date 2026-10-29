@@ -1131,6 +1131,55 @@ app.post("/customers", adminOnly, async (req, res) => {
   res.status(201).json(customer);
 });
 
+// Changes a saved customer, found by their current phone number. Past sales
+// keep the name and email they were made under, but a new phone number is
+// copied onto them, so the customer's purchase history stays theirs.
+app.put("/customers/:phone", adminOnly, async (req, res) => {
+  const name = String(req.body?.name ?? "").trim();
+  const phone = String(req.body?.phone ?? "").trim();
+  const email = String(req.body?.email ?? "").trim();
+  if (!name || !phone) {
+    res.status(400).json({ error: "Customer name and phone are required" });
+    return;
+  }
+  const oldKey = phoneKey(String(req.params.phone));
+  const newKey = phoneKey(phone);
+  const before = await transaction(async (client) => {
+    const { rows } = await client.query<CustomerRow>(
+      "SELECT name, phone, email FROM customers WHERE phone_key = $1 FOR UPDATE",
+      [oldKey],
+    );
+    if (!rows[0]) throw new HttpError(404, "Customer not found");
+    if (newKey !== oldKey) {
+      const { rowCount } = await client.query(
+        "SELECT 1 FROM customers WHERE phone_key = $1",
+        [newKey],
+      );
+      if (rowCount)
+        throw new HttpError(409, `A customer with phone ${phone} already exists`);
+      await client.query(
+        `UPDATE orders SET customer_phone = $2
+         WHERE regexp_replace(customer_phone, '\\s+', '', 'g') = $1`,
+        [oldKey, phone],
+      );
+    }
+    await client.query(
+      `UPDATE customers SET phone_key = $2, name = $3, phone = $4, email = $5
+       WHERE phone_key = $1`,
+      [oldKey, newKey, name, phone, email || null],
+    );
+    return rows[0];
+  });
+  const customer: Customer = { name, phone, ...(email ? { email } : {}) };
+  await logBy(
+    res,
+    "customer_updated",
+    `Edited customer ${before.name} (${before.phone})` +
+      (before.name !== name || before.phone !== phone ? `, now ${name} (${phone})` : ""),
+  );
+  res.json(customer);
+});
+
 // Every sale, or with ?user= ("admin" or a staff id) only that person's.
 app.get("/orders", adminOnly, async (req, res) => {
   const user = String(req.query.user ?? "");

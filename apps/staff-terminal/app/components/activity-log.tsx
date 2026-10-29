@@ -18,6 +18,7 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   product_updated: "Product edited",
   inventory_imported: "CSV upload",
   customer_added: "Customer added",
+  customer_updated: "Customer edited",
   staff_added: "Staff added",
   staff_updated: "Staff edited",
   staff_removed: "Staff removed",
