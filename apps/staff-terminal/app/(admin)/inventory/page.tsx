@@ -9,7 +9,11 @@ import ActionModals, {
 import AddProductForm from "../../components/add-product-form";
 import Modal from "../../components/modal";
 import Pagination, { usePagination } from "../../components/pagination";
-import SearchBox, { matches, NoMatches } from "../../components/search-box";
+import SearchBox, {
+  matches,
+  NoMatches,
+  productMatches,
+} from "../../components/search-box";
 import {
   CARD,
   PRIMARY_BUTTON,
@@ -62,7 +66,6 @@ const TYPE_FILTERS = {
   single: "Without options",
 } as const;
 
-
 export default function InventoryPage() {
   const catalog = useLoad(fetchCatalog);
   const [uploading, setUploading] = useState(false);
@@ -105,8 +108,7 @@ export default function InventoryPage() {
 
   const products = catalog.data?.products.filter(
     (p) =>
-      (matches(search, p.name, p.sku, p.barcode, p.category, p.supplierName) ||
-        optionMatches(p)) &&
+      productMatches(search, p) &&
       (!category ||
         (category === NO_CATEGORY ? !p.category : p.category === category)) &&
       (!supplier ||
@@ -218,15 +220,37 @@ export default function InventoryPage() {
           <h2 className="font-semibold">Upload many products</h2>
           <p className="mt-1 text-sm text-muted">
             Upload a CSV file with the columns{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">sku</code>,{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">name</code>,{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">price</code> and{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">quantity</code>, plus
-            an optional{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">barcode</code>,{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">category</code>,{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">cost_price</code> and{" "}
-            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">image_url</code>{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              sku
+            </code>
+            ,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              name
+            </code>
+            ,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              price
+            </code>{" "}
+            and{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              quantity
+            </code>
+            , plus an optional{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              barcode
+            </code>
+            ,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              category
+            </code>
+            ,{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              cost_price
+            </code>{" "}
+            and{" "}
+            <code className="rounded-md bg-brand-soft/60 px-1.5 text-brand-deep">
+              image_url
+            </code>{" "}
             (Cloudinary link). Products are matched by SKU: existing ones are
             updated, new ones are added.
           </p>

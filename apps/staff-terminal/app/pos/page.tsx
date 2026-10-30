@@ -10,6 +10,7 @@ import type {
 } from "@pos/types";
 import { flushSync } from "react-dom";
 import Receipt from "../components/receipt";
+import { productMatches } from "../components/search-box";
 import {
   API_URL,
   apiFetch,
@@ -34,6 +35,7 @@ const QUIET_BUTTON =
 
 // Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
 const AUTO_PRINT = process.env.NEXT_PUBLIC_AUTO_PRINT_RECEIPT !== "false";
+const CATALOG_REFRESH_MS = 60_000;
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   transfer: "Bank transfer",
@@ -111,8 +113,23 @@ export default function Till() {
     [],
   );
 
+  // The till stays open all day, so it fetches the products again every
+  // minute and whenever it comes back into view. Otherwise products added
+  // or restocked since it opened (in Inventory, by CSV or from the website)
+  // wouldn't show up in its search.
   useEffect(() => {
     void load();
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const timer = window.setInterval(refresh, CATALOG_REFRESH_MS);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, [load]);
 
   const items = useMemo(() => products.flatMap(sellables), [products]);
@@ -132,17 +149,7 @@ export default function Till() {
 
   // Products in stock come first. Putting one in the sale doesn't move it.
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const found = q
-      ? products.filter((p) =>
-          [p, ...(p.variants ?? [])].some(
-            (x) =>
-              x.name.toLowerCase().includes(q) ||
-              x.sku.toLowerCase().includes(q) ||
-              (x.barcode ?? "").toLowerCase().includes(q),
-          ),
-        )
-      : products;
+    const found = products.filter((p) => productMatches(search, p));
     return [...found].sort(
       (a, b) => Number(shopStock(b) > 0) - Number(shopStock(a) > 0),
     );
