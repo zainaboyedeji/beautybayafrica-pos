@@ -17,8 +17,10 @@ import type {
   DuplicateSale,
   Expense,
   ExpensePaymentMethod,
+  Gift,
   Inventory,
   Order,
+  OrderGift,
   OrderItem,
   PaymentMethod,
   Product,
@@ -1199,11 +1201,16 @@ app.get("/orders", adminOnly, async (req, res) => {
     refunded_by_name: string | null;
     refund_reason: string | null;
     items: OrderItem[];
+    gifts: OrderGift[] | null;
   }>(
     `SELECT o.*, json_agg(json_strip_nulls(json_build_object(
          'productId', i.product_id, 'variantId', i.variant_id,
          'name', i.name, 'quantity', i.quantity,
-         'unitPrice', i.unit_price, 'unitCost', i.unit_cost)) ORDER BY i.line) AS items
+         'unitPrice', i.unit_price, 'unitCost', i.unit_cost)) ORDER BY i.line) AS items,
+       (SELECT json_agg(json_strip_nulls(json_build_object(
+           'giftId', g.gift_id, 'name', g.name, 'quantity', g.quantity,
+           'unitCost', g.unit_cost)) ORDER BY g.line)
+         FROM order_gifts g WHERE g.order_id = o.id) AS gifts
      FROM orders o JOIN order_items i ON i.order_id = o.id
      ${user ? `WHERE ${userFilter(user, "o.sold_by_role", "o.sold_by_staff_id", 1)}` : ""}
      GROUP BY o.id ORDER BY o.created_at`,
@@ -1214,6 +1221,7 @@ app.get("/orders", adminOnly, async (req, res) => {
       (row): Order => ({
         id: row.id,
         items: row.items,
+        ...(row.gifts ? { gifts: row.gifts } : {}),
         total: row.total,
         paymentMethod: row.payment_method,
         channel: row.channel,
@@ -1262,6 +1270,71 @@ const putBack = (
     [variantId || productId, quantity],
   );
 
+/** Puts `quantity` of a free gift back into its stock. */
+const putBackGift = (client: PoolClient, giftId: string, quantity: number) =>
+  client.query(
+    "UPDATE gifts SET quantity = quantity + $2, updated_at = now() WHERE id = $1",
+    [giftId, quantity],
+  );
+
+/** Takes `quantity` of a free gift out of its stock and returns the sale's line for it. */
+const takeGift = async (
+  client: PoolClient,
+  giftId: string,
+  quantity: number,
+): Promise<OrderGift> => {
+  const { rows } = await client.query<{ name: string; unit_cost: number | null }>(
+    `UPDATE gifts SET quantity = quantity - $2, updated_at = now()
+     WHERE id = $1 AND quantity >= $2 RETURNING name, unit_cost`,
+    [giftId, quantity],
+  );
+  if (!rows[0]) {
+    const found = await client.query<{ name: string }>(
+      "SELECT name FROM gifts WHERE id = $1",
+      [giftId],
+    );
+    throw found.rows[0]
+      ? new HttpError(409, `Not enough ${found.rows[0].name} left to give`)
+      : new HttpError(400, "Invalid free gift");
+  }
+  return {
+    giftId,
+    name: rows[0].name,
+    quantity,
+    ...(rows[0].unit_cost !== null ? { unitCost: rows[0].unit_cost } : {}),
+  };
+};
+
+/**
+ * The gifts a sale of `total` can get at the till: those still in stock at
+ * the highest minimum spend it reaches. The till applies the same rule.
+ */
+const giftChoices = async (client: PoolClient, total: number) => {
+  const { rows } = await client.query<{ id: string }>(
+    `SELECT id FROM gifts WHERE quantity > 0 AND min_spend = (
+       SELECT max(min_spend) FROM gifts WHERE quantity > 0 AND min_spend <= $1)`,
+    [total],
+  );
+  return rows.map((r) => r.id);
+};
+
+/** Saves the free gifts given with a sale. */
+const saveGifts = async (client: PoolClient, orderId: string, gifts: OrderGift[]) => {
+  for (const [line, gift] of gifts.entries()) {
+    await client.query(
+      `INSERT INTO order_gifts (order_id, line, gift_id, name, quantity, unit_cost)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [orderId, line, gift.giftId, gift.name, gift.quantity, gift.unitCost ?? null],
+    );
+  }
+};
+
+/** The free gifts of a sale, for the activity log. */
+const giftsText = (gifts: OrderGift[]) =>
+  gifts.length
+    ? `, with free ${gifts.map((g) => `${g.quantity} × ${g.name}`).join(", ")}`
+    : "";
+
 // Refunds a whole sale: it is marked refunded (and so leaves every total) and
 // its items go back into stock. A product or option removed since then just
 // doesn't get its stock back.
@@ -1297,6 +1370,11 @@ app.post("/orders/:id/refund", adminOnly, async (req, res) => {
     ]);
     for (const item of items)
       await putBack(client, item.product_id, item.variant_id, item.quantity);
+    const { rows: gifts } = await client.query<{ gift_id: string; quantity: number }>(
+      "SELECT gift_id, quantity FROM order_gifts WHERE order_id = $1",
+      [req.params.id],
+    );
+    for (const gift of gifts) await putBackGift(client, gift.gift_id, gift.quantity);
     return rows[0];
   });
   await logBy(
@@ -1401,6 +1479,21 @@ const requestedLines = (requested: unknown) => {
   });
 };
 
+/** The free gifts a sale is sent with (none when left out), one line per gift. */
+const requestedGifts = (requested: unknown) => {
+  if (requested === undefined) return [];
+  if (!Array.isArray(requested)) throw new HttpError(400, "Invalid free gift");
+  const quantities = new Map<string, number>();
+  for (const line of requested) {
+    const giftId = String(line?.giftId ?? "");
+    const quantity = Number(line?.quantity);
+    if (!giftId || !Number.isInteger(quantity) || quantity <= 0)
+      throw new HttpError(400, "Invalid free gift");
+    quantities.set(giftId, (quantities.get(giftId) ?? 0) + quantity);
+  }
+  return [...quantities].map(([giftId, quantity]) => ({ giftId, quantity }));
+};
+
 /** The payment method, customer and (optional) date a sale is sent with. */
 const saleDetails = (body: Record<string, unknown> | undefined) => {
   const paymentMethod = body?.paymentMethod as PaymentMethod;
@@ -1474,6 +1567,7 @@ const findDuplicate = async (
 
 app.post("/orders", anyone, async (req, res) => {
   const requested = requestedLines(req.body?.items);
+  const requestedFree = requestedGifts(req.body?.gifts);
   const { paymentMethod, name, phone, email, ...details } = saleDetails(req.body);
   // Sales recorded in the back office may carry the date they happened.
   const createdAt = details.createdAt ?? new Date();
@@ -1513,6 +1607,18 @@ app.post("/orders", anyone, async (req, res) => {
     for (const { productId, variantId, quantity } of requested) {
       items.push(await takeItem(client, productId, variantId, quantity));
     }
+    // The cashier doesn't choose: the till picks one gift at random from
+    // those the sale's total earns, and this checks it's one of them.
+    if (session.role !== "admin" && requestedFree.length) {
+      const total = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+      const choices = await giftChoices(client, total);
+      const [only] = requestedFree;
+      if (requestedFree.length > 1 || only.quantity !== 1 || !choices.includes(only.giftId))
+        throw new HttpError(409, "The free gift changed. Check the sale and try again.");
+    }
+    const gifts: OrderGift[] = [];
+    for (const { giftId, quantity } of requestedFree)
+      gifts.push(await takeGift(client, giftId, quantity));
 
     // Save the customer. A phone number already saved keeps its customer's
     // name, so the sale goes under that name; a new email replaces the old.
@@ -1529,6 +1635,7 @@ app.post("/orders", anyone, async (req, res) => {
     const order: Order = {
       id: randomUUID(),
       items,
+      ...(gifts.length ? { gifts } : {}),
       total: Math.round(total * 100) / 100,
       paymentMethod,
       channel,
@@ -1570,6 +1677,7 @@ app.post("/orders", anyone, async (req, res) => {
         ],
       );
     }
+    await saveGifts(client, order.id, gifts);
     return order;
   });
   const count = order.items.reduce((sum, i) => sum + i.quantity, 0);
@@ -1578,18 +1686,21 @@ app.post("/orders", anyone, async (req, res) => {
     "sale",
     `Sold ${count} item${count === 1 ? "" : "s"} for ${naira.format(order.total)} ` +
       `(${paymentMethod === "card" ? "card" : "bank transfer"}, ${channel}) to ${order.customer.name}` +
-      (req.body?.createdAt ? `, dated ${createdAt.toLocaleDateString("en-NG")}` : ""),
+      (req.body?.createdAt ? `, dated ${createdAt.toLocaleDateString("en-NG")}` : "") +
+      giftsText(order.gifts ?? []),
   );
   res.status(201).json(order);
 });
 
 // Corrects a sale recorded with a mistake: its customer, payment, channel,
-// date and items. Stock moves by however much each item's quantity changed.
+// date, items and free gifts. Stock (and gift stock) moves by however much
+// each quantity changed.
 // Items already on the sale keep the price they were sold at; items added
 // are charged at today's price. Who made the sale doesn't change, and a
 // refunded sale can't be edited.
 app.put("/orders/:id", adminOnly, async (req, res) => {
   const requested = requestedLines(req.body?.items);
+  const requestedFree = requestedGifts(req.body?.gifts);
   const { paymentMethod, name, phone, email, createdAt } = saleDetails(req.body);
   const channel: SaleChannel = req.body?.channel === "online" ? "online" : "offline";
   const lineKey = (productId: string, variantId?: string | null) =>
@@ -1654,6 +1765,41 @@ app.put("/orders/:id", adminOnly, async (req, res) => {
       if (!wanted.has(key))
         await putBack(client, before.productId, before.variantId, before.quantity);
 
+    // Gifts already given keep the name and cost they were given with.
+    const { rows: oldGifts } = await client.query<{
+      gift_id: string;
+      name: string;
+      quantity: number;
+      unit_cost: number | null;
+    }>("SELECT * FROM order_gifts WHERE order_id = $1 ORDER BY line", [req.params.id]);
+    const given = new Map<string, OrderGift>();
+    for (const gift of oldGifts) {
+      const before = given.get(gift.gift_id);
+      if (before) before.quantity += gift.quantity;
+      else
+        given.set(gift.gift_id, {
+          giftId: gift.gift_id,
+          name: gift.name,
+          quantity: gift.quantity,
+          ...(gift.unit_cost !== null ? { unitCost: gift.unit_cost } : {}),
+        });
+    }
+    const gifts: OrderGift[] = [];
+    for (const { giftId, quantity } of requestedFree) {
+      const before = given.get(giftId);
+      if (!before) {
+        gifts.push(await takeGift(client, giftId, quantity));
+        continue;
+      }
+      const extra = quantity - before.quantity;
+      if (extra > 0) await takeGift(client, giftId, extra);
+      if (extra < 0) await putBackGift(client, giftId, -extra);
+      gifts.push({ ...before, quantity });
+    }
+    for (const [giftId, before] of given)
+      if (!requestedFree.some((g) => g.giftId === giftId))
+        await putBackGift(client, giftId, before.quantity);
+
     // A new phone number is saved as a customer; a saved one is left as is.
     await client.query(
       `INSERT INTO customers (phone_key, name, phone, email) VALUES ($1, $2, $3, $4)
@@ -1695,15 +1841,123 @@ app.put("/orders/:id", adminOnly, async (req, res) => {
         ],
       );
     }
-    return { total, createdAt: createdAt ?? rows[0].created_at };
+    await client.query("DELETE FROM order_gifts WHERE order_id = $1", [req.params.id]);
+    await saveGifts(client, String(req.params.id), gifts);
+    return { total, gifts, createdAt: createdAt ?? rows[0].created_at };
   });
   await logBy(
     res,
     "sale_edited",
     `Edited ${name}'s sale of ${order.createdAt.toLocaleDateString("en-NG", { timeZone: "Africa/Lagos" })}: ` +
-      `now ${naira.format(order.total)} (${paymentMethod === "card" ? "card" : "bank transfer"}, ${channel})`,
+      `now ${naira.format(order.total)} (${paymentMethod === "card" ? "card" : "bank transfer"}, ${channel})` +
+      giftsText(order.gifts),
   );
   res.json({ total: order.total });
+});
+
+// --- Free gifts -------------------------------------------------------------
+
+type GiftRow = {
+  id: string;
+  name: string;
+  quantity: number;
+  unit_cost: number | null;
+  min_spend: number | null;
+  notes: string | null;
+  given: number;
+  created_at: Date;
+};
+
+const toGift = (row: GiftRow): Gift => ({
+  id: row.id,
+  name: row.name,
+  quantity: row.quantity,
+  ...(row.unit_cost !== null ? { unitCost: row.unit_cost } : {}),
+  ...(row.min_spend !== null ? { minSpend: row.min_spend } : {}),
+  ...(row.notes !== null ? { notes: row.notes } : {}),
+  given: row.given,
+  createdAt: row.created_at.toISOString(),
+});
+
+// How many of a gift went out with sales that weren't refunded.
+const GIVEN = `COALESCE((SELECT sum(og.quantity) FROM order_gifts og
+    JOIN orders o ON o.id = og.order_id
+    WHERE og.gift_id = gifts.id AND o.refunded_at IS NULL), 0)::int AS given`;
+
+const giftFields = (body: unknown) => {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const name = String(b.name ?? "").trim();
+  if (!name) throw new HttpError(400, "Gift name is required");
+  const quantity = Number(b.quantity ?? 0);
+  if (!Number.isInteger(quantity) || quantity < 0)
+    throw new HttpError(400, "How many you have must be a whole number, 0 or more");
+  const amount = (value: unknown, label: string) => {
+    const text = String(value ?? "").trim();
+    const number = text === "" ? null : Number(text);
+    if (number !== null && !(number >= 0))
+      throw new HttpError(400, `${label} must be a number, 0 or more`);
+    return number;
+  };
+  return [
+    name,
+    quantity,
+    amount(b.unitCost, "Cost"),
+    amount(b.minSpend, "Minimum spend"),
+    optionalText(b.notes),
+  ] as const;
+};
+
+// The till lists them too, so the cashier can give one with a sale.
+app.get("/gifts", anyone, async (_req, res) => {
+  const { rows } = await db.query<GiftRow>(
+    `SELECT *, ${GIVEN} FROM gifts ORDER BY lower(name)`,
+  );
+  res.json(rows.map(toGift));
+});
+
+app.post("/gifts", adminOnly, async (req, res) => {
+  const fields = giftFields(req.body);
+  const { rows } = await db.query<GiftRow>(
+    `INSERT INTO gifts (id, name, quantity, unit_cost, min_spend, notes)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *, 0 AS given`,
+    [randomUUID(), ...fields],
+  );
+  await logBy(res, "gift_added", `Added free gift ${rows[0].name} (${rows[0].quantity} in stock)`);
+  res.status(201).json(toGift(rows[0]));
+});
+
+app.put("/gifts/:id", adminOnly, async (req, res) => {
+  const fields = giftFields(req.body);
+  const { rows } = await db.query<GiftRow>(
+    `UPDATE gifts SET name = $2, quantity = $3, unit_cost = $4, min_spend = $5,
+       notes = $6, updated_at = now()
+     WHERE id = $1 RETURNING *, ${GIVEN}`,
+    [req.params.id, ...fields],
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: "Gift not found" });
+    return;
+  }
+  await logBy(
+    res,
+    "gift_updated",
+    `Updated free gift ${rows[0].name} (${rows[0].quantity} in stock)`,
+  );
+  res.json(toGift(rows[0]));
+});
+
+// Sales the gift went out with keep its name.
+app.delete("/gifts/:id", adminOnly, async (req, res) => {
+  const { rows } = await db.query<{ name: string }>(
+    "DELETE FROM gifts WHERE id = $1 RETURNING name",
+    [req.params.id],
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: "Gift not found" });
+    return;
+  }
+  await logBy(res, "gift_removed", `Removed free gift ${rows[0].name}`);
+  res.sendStatus(204);
 });
 
 // --- Suppliers, expenses and store requests -------------------------------

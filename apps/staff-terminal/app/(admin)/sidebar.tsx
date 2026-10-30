@@ -22,6 +22,7 @@ const GROUPS: {
     label: "Shop",
     links: [
       { href: "/inventory", label: "Inventory", icon: "inventory" },
+      { href: "/gifts", label: "Free gifts", icon: "gift" },
       { href: "/sales", label: "Sales", icon: "sales" },
       { href: "/customers", label: "Customers", icon: "customers" },
     ],

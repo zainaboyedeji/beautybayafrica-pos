@@ -13,6 +13,7 @@ import {
   describeError,
   fetchCatalog,
   fetchCustomers,
+  fetchGifts,
   money,
   sellables,
   useLoad,
@@ -26,6 +27,11 @@ const NEW_CUSTOMER = "__new__";
 type Line = { key: string; quantity: string };
 
 const EMPTY_LINE: Line = { key: "", quantity: "1" };
+
+/** A free gift given with the sale. */
+type GiftLine = { giftId: string; quantity: string };
+
+const EMPTY_GIFT: GiftLine = { giftId: "", quantity: "1" };
 
 const CHANNELS: { value: SaleChannel; label: string; hint: string }[] = [
   { value: "offline", label: "Offline", hint: "Sold in the shop" },
@@ -50,6 +56,7 @@ const toLocalInput = (iso: string) => {
 export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
   const catalog = useLoad(fetchCatalog);
   const customers = useLoad(fetchCustomers);
+  const giftStock = useLoad(fetchGifts);
 
   const [customerPhone, setCustomerPhone] = useState(NEW_CUSTOMER);
   const [newCustomer, setNewCustomer] = useState({
@@ -73,6 +80,12 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
           quantity: String(i.quantity),
         }))
       : [EMPTY_LINE],
+  );
+  const [giftLines, setGiftLines] = useState<GiftLine[]>(
+    (order?.gifts ?? []).map((g) => ({
+      giftId: g.giftId,
+      quantity: String(g.quantity),
+    })),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +130,31 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
           .reduce((sum, i) => sum + i.quantity, 0),
     ]),
   );
+
+  // Gifts already given with a sale being edited are available to it too,
+  // and stay choosable even if the gift has since been removed.
+  const gifts = [
+    ...(giftStock.data ?? []).map((g) => ({
+      id: g.id,
+      name: g.name,
+      left:
+        g.quantity +
+        (order?.gifts ?? [])
+          .filter((og) => og.giftId === g.id)
+          .reduce((sum, og) => sum + og.quantity, 0),
+    })),
+    ...(order?.gifts ?? [])
+      .filter(
+        (og) =>
+          giftStock.data && !giftStock.data.some((g) => g.id === og.giftId),
+      )
+      .map((og) => ({ id: og.giftId, name: og.name, left: og.quantity })),
+  ];
+
+  const updateGift = (index: number, change: Partial<GiftLine>) =>
+    setGiftLines(
+      giftLines.map((g, i) => (i === index ? { ...g, ...change } : g)),
+    );
 
   const total = lines.reduce((sum, line) => {
     const item = items.find((s) => s.key === line.key);
@@ -172,6 +210,10 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
           ...(date && date !== initialDate
             ? { createdAt: new Date(date).toISOString() }
             : {}),
+          gifts: giftLines.map((g) => ({
+            giftId: g.giftId,
+            quantity: Number(g.quantity),
+          })),
           ...(confirmDuplicate ? { confirmDuplicate } : {}),
         }),
       });
@@ -369,6 +411,66 @@ export default function RecordSaleForm({ order, onSaved, onCancel }: Props) {
         >
           + Add another item
         </button>
+
+        <p className="mt-5 text-sm font-medium">
+          Free gifts <span className="font-normal text-muted">(optional)</span>
+        </p>
+        {giftLines.map((line, index) => (
+          <div key={index} className="mt-2 flex gap-3">
+            <div className="min-w-0 flex-1">
+              <select
+                required
+                aria-label={`Free gift ${index + 1}`}
+                value={line.giftId}
+                onChange={(e) => updateGift(index, { giftId: e.target.value })}
+                className={`${INPUT} mt-0`}
+              >
+                <option value="">Choose a gift…</option>
+                {gifts.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.left} left)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-24 shrink-0">
+              <input
+                required
+                type="number"
+                min={1}
+                step={1}
+                aria-label={`Gift quantity ${index + 1}`}
+                value={line.quantity}
+                onChange={(e) =>
+                  updateGift(index, { quantity: e.target.value })
+                }
+                className={`${INPUT} mt-0`}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setGiftLines(giftLines.filter((_, i) => i !== index))
+              }
+              className="rounded-md px-3 text-sm text-muted hover:bg-brand-soft"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        {giftStock.data?.length === 0 && giftLines.length === 0 ? (
+          <p className="mt-1 text-sm text-muted">
+            No free gifts yet. Add them on the Free gifts page.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setGiftLines([...giftLines, EMPTY_GIFT])}
+            className="mt-2 text-sm font-medium text-brand-deep underline"
+          >
+            + Add a free gift
+          </button>
+        )}
 
         {(catalog.failed || customers.failed) && (
           <p className="mt-3 text-sm text-red-700">

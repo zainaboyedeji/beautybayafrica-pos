@@ -34,6 +34,9 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   store_item_added: "Store item added",
   store_item_updated: "Store item edited",
   store_item_removed: "Store item removed",
+  gift_added: "Gift added",
+  gift_updated: "Gift edited",
+  gift_removed: "Gift removed",
 };
 
 const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
@@ -41,9 +44,19 @@ const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
   sales: { label: "Sales", actions: ["sale", "sale_refunded", "sale_edited"] },
   inventory: {
     label: "Inventory",
-    actions: ["product_added", "product_updated", "inventory_imported"],
+    actions: [
+      "product_added",
+      "product_updated",
+      "inventory_imported",
+      "gift_added",
+      "gift_updated",
+      "gift_removed",
+    ],
   },
-  customers: { label: "Customers", actions: ["customer_added"] },
+  customers: {
+    label: "Customers",
+    actions: ["customer_added", "customer_updated"],
+  },
   staff: {
     label: "Staff & PINs",
     actions: ["staff_added", "staff_updated", "staff_removed", "pin_reset"],
@@ -73,6 +86,7 @@ const ACTION_STYLES: Partial<Record<ActivityAction, string>> = {
   supplier_removed: "bg-red-100 text-red-800",
   expense_deleted: "bg-red-100 text-red-800",
   store_item_removed: "bg-red-100 text-red-800",
+  gift_removed: "bg-red-100 text-red-800",
   sale_refunded: "bg-red-100 text-red-800",
   sale: "bg-emerald-100 text-emerald-800",
   login: "bg-surface-alt text-muted",
@@ -91,7 +105,6 @@ const ROLE_LABELS: Record<ActivityEntry["actorRole"], string> = {
   staff: "Staff",
   visitor: "Not logged in",
 };
-
 
 const isToday = (iso: string) =>
   new Date(iso).toDateString() === new Date().toDateString();

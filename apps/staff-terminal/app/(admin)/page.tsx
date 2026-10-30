@@ -23,12 +23,11 @@ import { LoadError, Loading } from "../lib/status";
 
 const LOW_STOCK = 5;
 
-const MODAL_ACTIONS: { modal: ActionModal; label: string; icon: IconName }[] =
-  [
-    { modal: "product", label: "Add product", icon: "plus" },
-    { modal: "sale", label: "Record a sale", icon: "sales" },
-    { modal: "customer", label: "Add customer", icon: "customers" },
-  ];
+const MODAL_ACTIONS: { modal: ActionModal; label: string; icon: IconName }[] = [
+  { modal: "product", label: "Add product", icon: "plus" },
+  { modal: "sale", label: "Record a sale", icon: "sales" },
+  { modal: "customer", label: "Add customer", icon: "customers" },
+];
 
 const LINK_ACTIONS: { href: string; label: string; icon: IconName }[] = [
   { href: "/inventory", label: "Upload inventory", icon: "upload" },
@@ -101,14 +100,19 @@ function summarise(
     sales: sold.length,
     items: lines.reduce((sum, i) => sum + i.quantity, 0),
     revenue: sold.reduce((sum, o) => sum + o.total, 0),
-    // Only items sold while the product had a cost price.
-    profit: lines.reduce(
-      (sum, i) =>
-        i.unitCost === undefined
-          ? sum
-          : sum + (i.unitPrice - i.unitCost) * i.quantity,
-      0,
-    ),
+    // Only items sold while the product had a cost price, less what the
+    // free gifts given with them cost (when known).
+    profit:
+      lines.reduce(
+        (sum, i) =>
+          i.unitCost === undefined
+            ? sum
+            : sum + (i.unitPrice - i.unitCost) * i.quantity,
+        0,
+      ) -
+      sold
+        .flatMap((o) => o.gifts ?? [])
+        .reduce((sum, g) => sum + (g.unitCost ?? 0) * g.quantity, 0),
     // Expense days are calendar dates, so compare them at local midnight.
     expenses: expenses
       .filter((e) => within(new Date(`${e.spentOn}T00:00:00`)))
@@ -406,8 +410,9 @@ export default function Dashboard() {
         </table>
       </div>
       <p className="mt-2 text-xs text-muted">
-        Gross profit counts only items sold while the product had a cost price.
-        Net is gross profit minus expenses. Weeks start on Monday.
+        Gross profit counts only items sold while the product had a cost price,
+        less the cost of free gifts given. Net is gross profit minus expenses.
+        Weeks start on Monday.
       </p>
 
       <SectionTitle

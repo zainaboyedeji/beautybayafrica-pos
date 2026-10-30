@@ -125,6 +125,18 @@ export default function Receipt({ order, productNames, copy }: Props) {
                 </td>
               </tr>
             ))}
+            {order.gifts?.map((gift, index) => (
+              <tr key={`gift-${index}`} className="align-top">
+                <td className="pt-1.5 pr-2">
+                  <span className="font-bold">{gift.name}</span>
+                  <br />
+                  {gift.quantity} × FREE GIFT
+                </td>
+                <td className="pt-1.5 text-right whitespace-nowrap">
+                  {money.format(0)}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
 

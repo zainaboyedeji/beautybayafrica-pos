@@ -57,6 +57,35 @@ export interface OrderItem {
   unitCost?: number;
 }
 
+/** A free gift given with a sale. */
+export interface OrderGift {
+  giftId: string;
+  /** The gift's name at the time of sale. */
+  name: string;
+  quantity: number;
+  /** What one cost the shop at the time, when known. */
+  unitCost?: number;
+}
+
+/** Something the shop gives away free with sales, with its own stock. */
+export interface Gift {
+  id: string;
+  name: string;
+  /** How many are left to give away. */
+  quantity: number;
+  unitCost?: number;
+  /**
+   * The smallest sale total that can get it at the till, where each sale gets
+   * one at random from the highest minimum spend it reaches. Without one, the
+   * gift is only given by hand in the back office.
+   */
+  minSpend?: number;
+  notes?: string;
+  /** How many have been given with sales (refunded sales not counted). */
+  given: number;
+  createdAt: string;
+}
+
 export type PaymentMethod = "transfer" | "card";
 
 export interface Customer {
@@ -128,6 +157,8 @@ export type SaleChannel = "online" | "offline";
 export interface Order {
   id: string;
   items: OrderItem[];
+  /** Free gifts given with the sale. */
+  gifts?: OrderGift[];
   total: number;
   paymentMethod: PaymentMethod;
   channel: SaleChannel;
@@ -183,7 +214,10 @@ export type ActivityAction =
   | "request_decided"
   | "store_item_added"
   | "store_item_updated"
-  | "store_item_removed";
+  | "store_item_removed"
+  | "gift_added"
+  | "gift_updated"
+  | "gift_removed";
 
 export interface ActivityEntry {
   id: string;

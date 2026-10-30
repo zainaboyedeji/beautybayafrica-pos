@@ -5,6 +5,7 @@ import type {
   ActivityEntry,
   Customer,
   Expense,
+  Gift,
   Inventory,
   Order,
   Product,
@@ -151,6 +152,12 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
 export async function fetchStoreItems(): Promise<StoreItem[]> {
   const res = await apiFetch("/store-items");
   if (!res.ok) throw new Error("Store items request failed");
+  return res.json();
+}
+
+export async function fetchGifts(): Promise<Gift[]> {
+  const res = await apiFetch("/gifts");
+  if (!res.ok) throw new Error("Gifts request failed");
   return res.json();
 }
 

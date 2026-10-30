@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Customer,
   DuplicateSale,
+  Gift,
   Order,
   PaymentMethod,
   Product,
@@ -15,6 +16,7 @@ import {
   API_URL,
   apiFetch,
   fetchCatalog,
+  fetchGifts,
   money,
   orderItem,
   sellables,
@@ -36,6 +38,22 @@ const QUIET_BUTTON =
 // Set NEXT_PUBLIC_AUTO_PRINT_RECEIPT=false to print only when asked.
 const AUTO_PRINT = process.env.NEXT_PUBLIC_AUTO_PRINT_RECEIPT !== "false";
 const CATALOG_REFRESH_MS = 60_000;
+
+/** A number from 0 to 1 deciding which of the gift choices a sale gets. */
+const drawGift = () => Math.random();
+
+/**
+ * The gifts a sale of `total` can get: those still in stock at the highest
+ * minimum spend the sale reaches. Gifts without a minimum spend are only
+ * given by hand in the back office. The API checks the same rule.
+ */
+const giftChoices = (gifts: Gift[], total: number) => {
+  const reached = gifts.filter(
+    (g) => g.minSpend !== undefined && g.minSpend <= total && g.quantity > 0,
+  );
+  const top = Math.max(...reached.map((g) => g.minSpend!));
+  return reached.filter((g) => g.minSpend === top);
+};
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   transfer: "Bank transfer",
@@ -68,6 +86,11 @@ export default function Till() {
   const [cart, setCart] = useState<Record<string, number>>({});
   // The product whose options are being chosen from.
   const [picking, setPicking] = useState<Product | null>(null);
+  // Free gifts the shop has. Each sale gets one at random (see giftChoices),
+  // picked with a number drawn once per sale, so it doesn't change while
+  // the cashier works and they can't pick a different one.
+  const [gifts, setGifts] = useState<Gift[]>([]);
+  const [giftDraw, setGiftDraw] = useState(drawGift);
   const [search, setSearch] = useState("");
   const searchBox = useRef<HTMLInputElement>(null);
   // What the last scan did, shown under the top bar until the next one.
@@ -98,20 +121,22 @@ export default function Till() {
   // The phone number already checked, so they are asked only once.
   const [checkedPhone, setCheckedPhone] = useState<string | null>(null);
 
-  const load = useCallback(
-    () =>
-      fetchCatalog()
-        .then((catalog) => {
-          setProducts(catalog.products);
-          setStock(catalog.stock);
-          setError(null);
-        })
-        .catch(() => {
-          setError(`Cannot reach the sync API at ${API_URL}. Is it running?`);
-        })
-        .finally(() => setLoading(false)),
-    [],
-  );
+  const load = useCallback(() => {
+    // A failure here only hides the gifts; selling still works.
+    fetchGifts()
+      .then(setGifts)
+      .catch(() => {});
+    return fetchCatalog()
+      .then((catalog) => {
+        setProducts(catalog.products);
+        setStock(catalog.stock);
+        setError(null);
+      })
+      .catch(() => {
+        setError(`Cannot reach the sync API at ${API_URL}. Is it running?`);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   // The till stays open all day, so it fetches the products again every
   // minute and whenever it comes back into view. Otherwise products added
@@ -162,6 +187,11 @@ export default function Till() {
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
   const left = (key: string) => (stock[key] ?? 0) - (cart[key] ?? 0);
+
+  const choices = lines.length > 0 ? giftChoices(gifts, total) : [];
+  const gift = choices.length
+    ? choices[Math.floor(giftDraw * choices.length)]
+    : null;
 
   const setQuantity = (id: string, quantity: number) => {
     setLastOrder(null);
@@ -299,6 +329,7 @@ export default function Till() {
           paymentMethod,
           customer: buyer,
           items: lines.map((l) => orderItem(l.item, l.quantity)),
+          gifts: gift ? [{ giftId: gift.id, quantity: 1 }] : [],
           ...(confirmDuplicate ? { confirmDuplicate } : {}),
         }),
       });
@@ -314,9 +345,13 @@ export default function Till() {
       setPrintProblem(null);
       if (AUTO_PRINT) await printReceipt(body as Order);
       setCart({});
+      setGiftDraw(drawGift());
       setStep(null);
       await load();
     } catch (e) {
+      // e.g. the last of the gift went with another sale: fetch the gifts
+      // again, so the next try picks one that's left.
+      void load();
       setCheckoutError(
         e instanceof TypeError
           ? `Cannot reach the sync API at ${API_URL}.`
@@ -584,6 +619,24 @@ export default function Till() {
                     </button>
                   </li>
                 ))}
+                {gift && (
+                  <li className="flex items-center gap-3 py-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                      <Icon name="gift" className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {gift.name}
+                      </p>
+                      <p className="text-xs font-semibold text-emerald-700">
+                        Free gift · picked at random
+                      </p>
+                    </div>
+                    <span className="w-16 text-right text-sm font-medium">
+                      {money.format(0)}
+                    </span>
+                  </li>
+                )}
               </ul>
             )}
           </div>
@@ -694,6 +747,7 @@ export default function Till() {
             </div>
             <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-deep">
               Step {step === "payment" ? 1 : 2} of 2 · {money.format(total)}
+              {gift && ` · free ${gift.name}`}
             </p>
 
             {step === "payment" ? (

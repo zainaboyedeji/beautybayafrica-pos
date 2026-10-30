@@ -112,9 +112,14 @@ export default function SalesPage() {
     catalog.data?.products.find((p) => p.id === id)?.name ?? "Removed product";
 
   const itemsText = (order: Order) =>
-    order.items
-      .map((i) => `${i.quantity} × ${i.name ?? productName(i.productId)}`)
-      .join(", ");
+    [
+      ...order.items.map(
+        (i) => `${i.quantity} × ${i.name ?? productName(i.productId)}`,
+      ),
+      ...(order.gifts ?? []).map(
+        (g) => `${g.quantity} × ${g.name} (free gift)`,
+      ),
+    ].join(", ");
 
   const visible = orders.data
     ? [...orders.data]

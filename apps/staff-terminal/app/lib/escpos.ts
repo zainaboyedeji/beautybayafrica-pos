@@ -151,6 +151,10 @@ function receiptLines(
         ),
       ),
     ]),
+    ...(order.gifts ?? []).flatMap((gift) => [
+      ...plain(wrap(gift.name, width), { bold: true, keepWithNext: true }),
+      ...plain(columns(`${gift.quantity} x FREE GIFT`, price(0), width)),
+    ]),
     rule,
     ...field("Items", String(items)),
     ...field("TOTAL", price(order.total), { bold: true, size: "tall" }),

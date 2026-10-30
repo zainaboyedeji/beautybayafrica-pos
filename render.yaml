@@ -76,6 +76,9 @@ services:
         source: /sales
         destination: /sales.html
       - type: rewrite
+        source: /gifts
+        destination: /gifts.html
+      - type: rewrite
         source: /customers
         destination: /customers.html
       - type: rewrite
