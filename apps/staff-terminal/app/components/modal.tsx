@@ -24,7 +24,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-3 backdrop-blur-sm sm:p-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -38,7 +38,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
         }`}
       >
         {/* A soft pink header band. */}
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-gradient-to-r from-surface-alt to-brand-soft/50 px-6 py-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-gradient-to-r from-surface-alt to-brand-soft/50 px-4 py-4 sm:px-6">
           <h2 className="text-xl font-semibold">{title}</h2>
           <button
             onClick={onClose}
@@ -48,7 +48,7 @@ export default function Modal({ title, onClose, children, wide }: Props) {
             ×
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="p-4 sm:p-6">{children}</div>
       </div>
     </div>,
     document.body,

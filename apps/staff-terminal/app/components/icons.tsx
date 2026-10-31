@@ -101,6 +101,8 @@ const ICONS = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  close: <path d="M18 6 6 18M6 6l12 12" />,
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

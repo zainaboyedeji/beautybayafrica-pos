@@ -237,7 +237,7 @@ export default function Dashboard() {
   return (
     <div className="mx-auto max-w-6xl">
       {/* The pink hero: who's here, today's date, and the everyday actions. */}
-      <section className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-brand-deep via-brand-hover to-brand px-8 pb-20 pt-8 text-white shadow-2xl shadow-brand/30">
+      <section className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-brand-deep via-brand-hover to-brand px-5 pb-20 pt-6 sm:px-8 sm:pt-8 text-white shadow-2xl shadow-brand/30">
         <div
           aria-hidden
           className="pointer-events-none absolute -right-20 -top-28 h-80 w-80 animate-drift rounded-full bg-white/25 blur-3xl"
@@ -255,7 +255,7 @@ export default function Dashboard() {
                 month: "long",
               })}
             </p>
-            <h1 className="mt-2 text-4xl font-semibold">
+            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
               {greeting(now)},{" "}
               <span className="italic text-brand-soft">
                 {session?.name.split(" ")[0] ?? "there"}
@@ -300,7 +300,7 @@ export default function Dashboard() {
       </section>
 
       {/* Today's figures, tucked over the hero's bottom edge. */}
-      <div className="relative -mt-12 grid grid-cols-2 gap-4 px-4 lg:grid-cols-4">
+      <div className="relative -mt-12 grid grid-cols-2 gap-3 px-2 sm:gap-4 sm:px-4 lg:grid-cols-4">
         {todayTiles.map((tile) => (
           <div
             key={tile.label}

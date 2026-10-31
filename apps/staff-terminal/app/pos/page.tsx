@@ -30,8 +30,8 @@ import TopBar from "../components/top-bar";
 
 // Pop-ups over the till: a soft veil and a white card that pops in.
 const OVERLAY =
-  "fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-6 backdrop-blur-sm print:hidden";
-const DIALOG = "w-full animate-pop-in rounded-2xl bg-white p-6 shadow-2xl";
+  "fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-3 backdrop-blur-sm sm:p-6 print:hidden";
+const DIALOG = "w-full animate-pop-in rounded-2xl bg-white p-5 shadow-2xl sm:p-6";
 const QUIET_BUTTON =
   "w-full rounded-xl py-2 text-sm font-medium text-muted transition hover:bg-brand-soft/60 hover:text-ink disabled:opacity-40";
 
@@ -365,7 +365,7 @@ export default function Till() {
   };
 
   return (
-    <div className="flex h-screen flex-col gap-3 p-3 text-ink print:block print:h-auto print:bg-white print:p-0">
+    <div className="flex min-h-screen flex-col gap-3 p-3 text-ink lg:h-screen print:block print:h-auto print:bg-white print:p-0">
       <TopBar
         title="The till"
         name={session?.name}
@@ -386,7 +386,7 @@ export default function Till() {
             Printer
           </button>
         )}
-        <div className="relative">
+        <div className="relative flex-1 sm:flex-initial">
           <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted/80">
             <Icon name="search" className="h-4 w-4" />
           </span>
@@ -402,7 +402,7 @@ export default function Till() {
               if (e.key === "Enter") addScanned();
             }}
             placeholder="Scan barcode or search by name or SKU"
-            className="w-80 rounded-xl bg-white py-2 pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-muted focus:ring-4 focus:ring-white/50"
+            className="w-full rounded-xl bg-white py-2 pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-muted focus:ring-4 focus:ring-white/50 sm:w-80"
           />
         </div>
       </TopBar>
@@ -433,8 +433,8 @@ export default function Till() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-3 print:hidden">
-        <main className="flex-1 overflow-y-auto p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row print:hidden">
+        <main className="flex-1 sm:p-3 lg:overflow-y-auto">
           {loading ? (
             <p className="text-muted">Loading products…</p>
           ) : visible.length === 0 ? (
@@ -531,9 +531,27 @@ export default function Till() {
               })}
             </div>
           )}
+          {/* On phones the sale is below the products: a bar to jump to it. */}
+          {lines.length > 0 && (
+            <button
+              onClick={() =>
+                document
+                  .getElementById("current-sale")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+              className={`${PRIMARY_BUTTON} sticky bottom-3 mt-4 w-full justify-between py-3.5 text-base lg:hidden`}
+            >
+              <span>
+                View sale · {itemCount} item{itemCount === 1 ? "" : "s"}
+              </span>
+              <span className="tabular-nums">{money.format(total)}</span>
+            </button>
+          )}
         </main>
 
-        <aside className="flex w-96 flex-col overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-line">
+        <aside
+          id="current-sale"
+          className="flex scroll-mt-3 flex-col overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-line lg:w-96">
           <div className="flex items-center justify-between border-b border-line bg-gradient-to-r from-surface-alt to-brand-soft/50 px-5 py-4">
             <h2 className="text-xl font-semibold">Current sale</h2>
             {lines.length > 0 && (

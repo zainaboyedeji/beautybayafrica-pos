@@ -26,7 +26,7 @@ export default function PageHeader({
           </span>
           {section}
         </p>
-        <h1 className="mt-3 text-4xl font-semibold">{title}</h1>
+        <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">{title}</h1>
         {/* A short pink stroke under the title. */}
         <span
           aria-hidden

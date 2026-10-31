@@ -105,7 +105,7 @@ export default function RequestPage() {
         ]}
       />
 
-      <main className="mx-auto max-w-4xl animate-fade-up px-5 py-8">
+      <main className="mx-auto max-w-4xl animate-fade-up px-1 py-6 sm:px-5 sm:py-8">
         {askingPin && (
           <ConfirmDialog
             title="Ask for a new PIN"

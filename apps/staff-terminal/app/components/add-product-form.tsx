@@ -395,7 +395,7 @@ export default function AddProductForm({
           {options.map((option, index) => (
             <fieldset
               key={option.id ?? `new-${index}`}
-              className="grid grid-cols-4 gap-3 rounded-xl border border-line p-3"
+              className="grid grid-cols-2 gap-3 rounded-xl border border-line p-3 sm:grid-cols-4"
             >
               <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">
                 Option {index + 1}
