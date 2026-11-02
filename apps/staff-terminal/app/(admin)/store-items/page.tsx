@@ -5,6 +5,7 @@ import type {
   ExpensePaymentMethod,
   StoreItem,
   StoreItemStatus,
+  StoreLocation,
 } from "@pos/types";
 import { Notice } from "../../components/action-modals";
 import ConfirmDialog from "../../components/confirm-dialog";
@@ -26,6 +27,7 @@ import {
   describeError,
   fetchStaff,
   fetchStoreItems,
+  fetchStoreLocations,
   fetchSuppliers,
   money,
   useLoad,
@@ -61,9 +63,15 @@ const STATUS_STYLES: Record<StoreItemStatus, string> = {
   disposed: "bg-surface-alt text-muted line-through",
 };
 
-// Lost and disposed items no longer count towards what the shop owns.
-const OWNED = (item: StoreItem) =>
-  item.status !== "lost" && item.status !== "disposed";
+/** How many of an item have one of these statuses. */
+const countWith = (item: StoreItem, ...statuses: StoreItemStatus[]) =>
+  item.lines
+    .filter((l) => statuses.includes(l.status))
+    .reduce((sum, l) => sum + l.quantity, 0);
+
+// Lost and disposed ones no longer count towards what the shop owns.
+const ownedCount = (item: StoreItem) =>
+  item.quantity - countWith(item, "lost", "disposed");
 
 const PAYMENT_LABELS: Record<ExpensePaymentMethod, string> = {
   cash: "Cash",
@@ -84,15 +92,16 @@ const formatDay = (day: string) =>
 
 const itemValue = (item: StoreItem) => (item.unitCost ?? 0) * item.quantity;
 
-const IN_STORE = "__in_store__";
+const UNASSIGNED = "__unassigned__";
+const NO_LOCATION = "__no_location__";
 
 /** How many aren't handed to anyone. */
-const inStore = (item: StoreItem) =>
+const unassigned = (item: StoreItem) =>
   item.quantity - item.assignments.reduce((sum, a) => sum + a.quantity, 0);
 
-/** Who has how many, then what is left in store. */
+/** Who has how many, then how many nobody has. */
 function Holders({ item }: { item: StoreItem }) {
-  const left = inStore(item);
+  const left = unassigned(item);
   return (
     <ul className="space-y-0.5">
       {item.assignments.map((a) => (
@@ -107,11 +116,34 @@ function Holders({ item }: { item: StoreItem }) {
         <li className="text-muted">
           {item.assignments.length === 0
             ? item.quantity > 1
-              ? `All ${left} in store`
-              : "In store"
-            : `${left} in store`}
+              ? `All ${left} not assigned`
+              : "Not assigned"
+            : `${left} not assigned`}
         </li>
       )}
+    </ul>
+  );
+}
+
+/** How many are in each status, and where. */
+function Lines({ item }: { item: StoreItem }) {
+  return (
+    <ul className="space-y-1">
+      {item.lines.map((l) => (
+        <li key={`${l.status} ${l.locationId}`}>
+          <span
+            className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[l.status]}`}
+          >
+            {item.lines.length > 1 && `${l.quantity} `}
+            {STATUS_LABELS[l.status]}
+          </span>
+          {l.locationName && (
+            <span className="block pt-0.5 text-xs text-muted">
+              {l.locationName}
+            </span>
+          )}
+        </li>
+      ))}
     </ul>
   );
 }
@@ -119,14 +151,18 @@ function Holders({ item }: { item: StoreItem }) {
 /** Things the shop owns for its own use: phones, laptops, uniforms… */
 export default function StoreItemsPage() {
   const items = useLoad(fetchStoreItems);
+  const locations = useLoad(fetchStoreLocations);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState<StoreItemStatus | "">("");
-  // A person's name, IN_STORE, or "" for everyone.
+  // A person's name, UNASSIGNED, or "" for everyone.
   const [holder, setHolder] = useState("");
+  // A location's id, NO_LOCATION, or "" for everywhere.
+  const [location, setLocation] = useState("");
   // null: closed; "new": adding; an item: editing it.
   const [editing, setEditing] = useState<StoreItem | "new" | null>(null);
   const [removing, setRemoving] = useState<StoreItem | null>(null);
+  const [managingLocations, setManagingLocations] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,10 +176,14 @@ export default function StoreItemsPage() {
   const visible = items.data?.filter(
     (i) =>
       (!category || i.category === category) &&
-      (!status || i.status === status) &&
+      (!status || i.lines.some((l) => l.status === status)) &&
+      (!location ||
+        i.lines.some((l) =>
+          location === NO_LOCATION ? !l.locationId : l.locationId === location,
+        )) &&
       (!holder ||
-        (holder === IN_STORE
-          ? inStore(i) > 0
+        (holder === UNASSIGNED
+          ? unassigned(i) > 0
           : i.assignments.some((a) => a.assignedTo === holder))) &&
       matches(
         search,
@@ -152,40 +192,36 @@ export default function StoreItemsPage() {
         i.category,
         i.serialNumber,
         ...i.assignments.map((a) => a.assignedTo),
+        ...i.lines.map((l) => l.locationName),
         i.supplierName,
         i.notes,
       ),
   );
   const pager = usePagination(
     visible,
-    JSON.stringify([search, category, status, holder]),
+    JSON.stringify([search, category, status, holder, location]),
   );
 
-  const owned = all.filter(OWNED);
   const tiles = [
     {
       label: "Items owned",
-      value: String(owned.reduce((sum, i) => sum + i.quantity, 0)),
+      value: String(all.reduce((sum, i) => sum + ownedCount(i), 0)),
     },
     {
       label: "Value of items owned",
-      value: money.format(owned.reduce((sum, i) => sum + itemValue(i), 0)),
+      value: money.format(
+        all.reduce((sum, i) => sum + (i.unitCost ?? 0) * ownedCount(i), 0),
+      ),
     },
     {
       label: "Under repair",
       value: String(
-        all
-          .filter((i) => i.status === "under_repair")
-          .reduce((sum, i) => sum + i.quantity, 0),
+        all.reduce((sum, i) => sum + countWith(i, "under_repair"), 0),
       ),
     },
     {
       label: "Lost or stolen",
-      value: String(
-        all
-          .filter((i) => i.status === "lost")
-          .reduce((sum, i) => sum + i.quantity, 0),
-      ),
+      value: String(all.reduce((sum, i) => sum + countWith(i, "lost"), 0)),
     },
   ];
 
@@ -198,6 +234,7 @@ export default function StoreItemsPage() {
       });
       if (!res.ok) throw new Error("Could not remove item");
       setNotice(`${item.name} removed.`);
+      void locations.reload();
       await items.reload();
     } catch (e) {
       setError(describeError(e, "Could not remove item"));
@@ -217,6 +254,12 @@ export default function StoreItemsPage() {
           </>
         }
       >
+        <button
+          onClick={() => setManagingLocations(true)}
+          className={SECONDARY_BUTTON}
+        >
+          Locations
+        </button>
         <button onClick={() => setEditing("new")} className={PRIMARY_BUTTON}>
           Add item
         </button>
@@ -236,20 +279,36 @@ export default function StoreItemsPage() {
       {editing && (
         <Modal
           title={editing === "new" ? "Add a store item" : "Edit store item"}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            // Escape reaches every open window; only close the top one.
+            if (!managingLocations) setEditing(null);
+          }}
           wide
         >
           <StoreItemForm
             item={editing === "new" ? undefined : editing}
             categories={categories}
+            locations={locations.data ?? []}
+            onManageLocations={() => setManagingLocations(true)}
             onCancel={() => setEditing(null)}
             onSaved={(message) => {
               setEditing(null);
               setNotice(message);
               void items.reload();
+              void locations.reload();
             }}
           />
         </Modal>
+      )}
+      {managingLocations && (
+        <LocationsManager
+          locations={locations.data ?? []}
+          onChanged={() => {
+            void locations.reload();
+            void items.reload();
+          }}
+          onClose={() => setManagingLocations(false)}
+        />
       )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -266,7 +325,7 @@ export default function StoreItemsPage() {
           <SearchBox
             value={search}
             onChange={setSearch}
-            placeholder="Search by code, name, serial number, who has it…"
+            placeholder="Search by code, name, serial number, location, who has it…"
           />
         </div>
         <select
@@ -296,13 +355,27 @@ export default function StoreItemsPage() {
           ))}
         </select>
         <select
+          aria-label="Location"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          className={SELECT}
+        >
+          <option value="">All locations</option>
+          <option value={NO_LOCATION}>No location</option>
+          {(locations.data ?? []).map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+        <select
           aria-label="Who has it"
           value={holder}
           onChange={(e) => setHolder(e.target.value)}
           className={SELECT}
         >
           <option value="">Anyone</option>
-          <option value={IN_STORE}>Still in store</option>
+          <option value={UNASSIGNED}>Not assigned</option>
           {holders.map((name) => (
             <option key={name} value={name}>
               {name}
@@ -334,7 +407,7 @@ export default function StoreItemsPage() {
                   <th className="px-4 py-3 text-right">Cost</th>
                   <th className="px-4 py-3">Bought</th>
                   <th className="px-4 py-3">Who has it</th>
-                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Status &amp; location</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -389,12 +462,8 @@ export default function StoreItemsPage() {
                     <td className="px-4 py-3">
                       <Holders item={item} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}
-                      >
-                        {STATUS_LABELS[item.status]}
-                      </span>
+                    <td className="px-4 py-3">
+                      <Lines item={item} />
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       <button
@@ -431,14 +500,202 @@ function ItemCode({ tag }: { tag: string }) {
   );
 }
 
+/** Add, rename and remove the places items are kept. */
+function LocationsManager({
+  locations,
+  onChanged,
+  onClose,
+}: {
+  locations: StoreLocation[];
+  onChanged: () => void;
+  onClose: () => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [removing, setRemoving] = useState<StoreLocation | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sends a change; true when it worked.
+  const send = async (path: string, method: string, name?: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await apiFetch(path, {
+        method,
+        ...(name !== undefined
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name }),
+            }
+          : {}),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not save the location");
+      }
+      onChanged();
+      return true;
+    } catch (e) {
+      setError(describeError(e, "Could not save the location"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const add = async () => {
+    if (await send("/store-locations", "POST", newName)) setNewName("");
+  };
+  const rename = async () => {
+    if (
+      renaming &&
+      (await send(`/store-locations/${renaming.id}`, "PUT", renaming.name))
+    )
+      setRenaming(null);
+  };
+
+  return (
+    <Modal
+      title="Store locations"
+      onClose={() => {
+        // Escape reaches every open window; only close the top one.
+        if (!removing) onClose();
+      }}
+    >
+      {removing && (
+        <ConfirmDialog
+          title="Remove location"
+          message={
+            removing.itemCount > 0
+              ? `Remove ${removing.name}? ${removing.itemCount === 1 ? "1 item is" : `${removing.itemCount} items are`} kept there. They stay on your list, but will show no location until you choose a new one.`
+              : `Remove ${removing.name}?`
+          }
+          confirmLabel="Remove"
+          danger
+          onConfirm={async () => {
+            const { id } = removing;
+            setRemoving(null);
+            await send(`/store-locations/${id}`, "DELETE");
+          }}
+          onClose={() => setRemoving(null)}
+        />
+      )}
+      <form
+        className="flex items-start gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void add();
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <input
+            autoFocus
+            required
+            aria-label="New location"
+            placeholder="e.g. Front counter, Back office"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className={INPUT}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={saving}
+          className={`${PRIMARY_BUTTON} mt-1`}
+        >
+          Add
+        </button>
+      </form>
+      {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+      {locations.length === 0 ? (
+        <p className="mt-4 text-sm text-muted">No locations yet.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-line text-sm">
+          {locations.map((l) =>
+            renaming?.id === l.id ? (
+              <li key={l.id} className="py-2">
+                <form
+                  className="flex items-start gap-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void rename();
+                  }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <input
+                      autoFocus
+                      required
+                      aria-label={`New name for ${l.name}`}
+                      value={renaming.name}
+                      onChange={(e) =>
+                        setRenaming({ id: l.id, name: e.target.value })
+                      }
+                      className={INPUT}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="mt-3.5 font-medium text-brand-deep hover:underline"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRenaming(null)}
+                    className="mt-3.5 font-medium text-muted hover:underline"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              </li>
+            ) : (
+              <li key={l.id} className="flex items-center gap-3 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{l.name}</span>
+                  <span className="block text-xs text-muted">
+                    {l.itemCount === 1 ? "1 item" : `${l.itemCount} items`}
+                  </span>
+                </span>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setRenaming({ id: l.id, name: l.name });
+                  }}
+                  className="font-medium text-brand-deep hover:underline"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setRemoving(l)}
+                  className="font-medium text-red-700 hover:underline"
+                >
+                  Remove
+                </button>
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </Modal>
+  );
+}
+
 function StoreItemForm({
   item,
   categories,
+  locations,
+  onManageLocations,
   onSaved,
   onCancel,
 }: {
   item?: StoreItem;
   categories: string[];
+  locations: StoreLocation[];
+  onManageLocations: () => void;
   onSaved: (message: string) => void;
   onCancel: () => void;
 }) {
@@ -452,9 +709,69 @@ function StoreItemForm({
     boughtOn: item?.boughtOn ?? (item ? "" : today()),
     supplierId: item?.supplierId ?? "",
     serialNumber: item?.serialNumber ?? "",
-    status: item?.status ?? ("in_use" as StoreItemStatus),
     notes: item?.notes ?? "",
   });
+  // How the quantity splits up; quantities are kept as typed until saving.
+  const [lines, setLines] = useState(
+    item
+      ? item.lines.map((l) => ({
+          quantity: String(l.quantity),
+          status: l.status,
+          locationId: l.locationId ?? "",
+        }))
+      : [
+          {
+            quantity: "1",
+            status: "in_use" as StoreItemStatus,
+            locationId: "",
+          },
+        ],
+  );
+  const unplaced =
+    (Number(form.quantity) || 0) -
+    lines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0);
+  const updateLine = (
+    index: number,
+    change: Partial<(typeof lines)[number]>,
+  ) => setLines(lines.map((l, i) => (i === index ? { ...l, ...change } : l)));
+  // Starts a new row with whatever isn't placed yet, or else takes one from
+  // the last row that can spare it: of 4 in use, 3 stay and 1 can be changed.
+  const canSplit =
+    unplaced > 0 || lines.some((l) => Number(l.quantity) > 1);
+  const splitLine = () => {
+    const added = {
+      status: "in_storage" as StoreItemStatus,
+      locationId: "",
+    };
+    if (unplaced > 0) {
+      setLines([...lines, { ...added, quantity: String(unplaced) }]);
+      return;
+    }
+    const from = lines.findLastIndex((l) => Number(l.quantity) > 1);
+    setLines([
+      ...lines.map((l, i) =>
+        i === from ? { ...l, quantity: String(Number(l.quantity) - 1) } : l,
+      ),
+      { ...added, quantity: "1" },
+    ]);
+  };
+  // A removed row's quantity goes back to the first row left.
+  const removeLine = (index: number) => {
+    const rest = lines.filter((_, i) => i !== index);
+    setLines(
+      rest.map((l, i) =>
+        i === 0
+          ? {
+              ...l,
+              quantity: String(
+                (Number(l.quantity) || 0) +
+                  (Number(lines[index].quantity) || 0),
+              ),
+            }
+          : l,
+      ),
+    );
+  };
   // Who has how many; quantities are kept as typed until saving.
   const [assignments, setAssignments] = useState(
     (item?.assignments ?? []).map((a) => ({
@@ -504,6 +821,10 @@ function StoreItemForm({
             ...form,
             quantity: Number(form.quantity),
             unitCost: form.unitCost === "" ? null : Number(form.unitCost),
+            lines: lines.map((l) => ({
+              ...l,
+              quantity: Number(l.quantity),
+            })),
             assignments: assignments.map((a) => ({
               assignedTo: a.assignedTo,
               quantity: Number(a.quantity),
@@ -578,16 +899,6 @@ function StoreItemForm({
         />
       </label>
       <label className="text-sm font-medium">
-        Status
-        <select value={form.status} onChange={set("status")} className={INPUT}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="text-sm font-medium">
         Quantity
         <input
           required
@@ -595,7 +906,12 @@ function StoreItemForm({
           min={1}
           step={1}
           value={form.quantity}
-          onChange={set("quantity")}
+          onChange={(e) => {
+            set("quantity")(e);
+            // With one row, all of them are in it.
+            if (lines.length === 1)
+              setLines([{ ...lines[0], quantity: e.target.value }]);
+          }}
           className={INPUT}
         />
       </label>
@@ -635,7 +951,7 @@ function StoreItemForm({
           ))}
         </select>
       </label>
-      <label className="text-sm font-medium sm:col-span-2">
+      <label className="text-sm font-medium">
         Serial or IMEI number{" "}
         <span className="font-normal text-muted">(optional)</span>
         <input
@@ -645,11 +961,109 @@ function StoreItemForm({
         />
       </label>
       <div className="text-sm sm:col-span-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-medium">Status and location</p>
+          <button
+            type="button"
+            onClick={onManageLocations}
+            className="font-medium text-brand-deep hover:underline"
+          >
+            Add or edit locations
+          </button>
+        </div>
+        {lines.map((l, index) => (
+          <div key={index} className="mt-2 flex flex-wrap gap-2 sm:flex-nowrap">
+            {lines.length > 1 && (
+              <div className="w-20 shrink-0">
+                <input
+                  required
+                  aria-label={`How many in row ${index + 1}`}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={l.quantity}
+                  onChange={(e) =>
+                    updateLine(index, { quantity: e.target.value })
+                  }
+                  className={INPUT}
+                />
+              </div>
+            )}
+            <div className="min-w-32 flex-1">
+              <select
+                aria-label={`Status ${index + 1}`}
+                value={l.status}
+                onChange={(e) =>
+                  updateLine(index, {
+                    status: e.target.value as StoreItemStatus,
+                  })
+                }
+                className={INPUT}
+              >
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-32 flex-1">
+              <select
+                aria-label={`Location ${index + 1}`}
+                value={l.locationId}
+                onChange={(e) =>
+                  updateLine(index, { locationId: e.target.value })
+                }
+                className={INPUT}
+              >
+                <option value="">No location</option>
+                {locations.map((place) => (
+                  <option key={place.id} value={place.id}>
+                    {place.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {lines.length > 1 && (
+              <button
+                type="button"
+                aria-label="Remove"
+                onClick={() => removeLine(index)}
+                className="rounded-md px-3 text-muted hover:bg-brand-soft"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            disabled={!canSplit}
+            onClick={splitLine}
+            className="text-left font-medium text-brand-deep hover:underline disabled:text-muted disabled:no-underline"
+          >
+            + Some are in a different status or place
+          </button>
+          {lines.length > 1 && (
+            <span
+              className={
+                unplaced !== 0 ? "font-medium text-red-700" : "text-muted"
+              }
+            >
+              {unplaced > 0
+                ? `${unplaced} not placed yet`
+                : unplaced < 0
+                  ? `${-unplaced} more than the quantity`
+                  : `All ${form.quantity} placed`}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="text-sm sm:col-span-2">
         <p className="font-medium">
           Who has it{" "}
-          <span className="font-normal text-muted">
-            (people, or places like &ldquo;Front counter&rdquo;)
-          </span>
+          <span className="font-normal text-muted">(optional)</span>
         </p>
         {assignments.map((a, index) => (
           <div key={index} className="mt-2 flex gap-2">
@@ -658,7 +1072,7 @@ function StoreItemForm({
                 required
                 aria-label={`Assigned to ${index + 1}`}
                 list="store-item-people"
-                placeholder="Name or place"
+                placeholder="Name"
                 value={a.assignedTo}
                 onChange={(e) =>
                   updateAssignment(index, { assignedTo: e.target.value })
@@ -711,7 +1125,7 @@ function StoreItemForm({
           >
             {left < 0
               ? `${-left} more assigned than you have`
-              : `${left} still in store`}
+              : `${left} not assigned`}
           </span>
         </div>
       </div>
@@ -770,7 +1184,11 @@ function StoreItemForm({
         <button type="button" onClick={onCancel} className={SECONDARY_BUTTON}>
           Cancel
         </button>
-        <button type="submit" disabled={saving} className={PRIMARY_BUTTON}>
+        <button
+          type="submit"
+          disabled={saving || unplaced !== 0}
+          className={PRIMARY_BUTTON}
+        >
           {saving ? "Saving…" : item ? "Save changes" : "Add item"}
         </button>
       </div>

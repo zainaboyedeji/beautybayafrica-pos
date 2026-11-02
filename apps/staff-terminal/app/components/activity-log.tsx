@@ -34,6 +34,9 @@ const ACTION_LABELS: Record<ActivityAction, string> = {
   store_item_added: "Store item added",
   store_item_updated: "Store item edited",
   store_item_removed: "Store item removed",
+  store_location_added: "Store location added",
+  store_location_updated: "Store location edited",
+  store_location_removed: "Store location removed",
   gift_added: "Gift added",
   gift_updated: "Gift edited",
   gift_removed: "Gift removed",
@@ -75,7 +78,14 @@ const GROUPS: Record<string, { label: string; actions: ActivityAction[] }> = {
   },
   storeItems: {
     label: "Store items",
-    actions: ["store_item_added", "store_item_updated", "store_item_removed"],
+    actions: [
+      "store_item_added",
+      "store_item_updated",
+      "store_item_removed",
+      "store_location_added",
+      "store_location_updated",
+      "store_location_removed",
+    ],
   },
 };
 
@@ -86,6 +96,7 @@ const ACTION_STYLES: Partial<Record<ActivityAction, string>> = {
   supplier_removed: "bg-red-100 text-red-800",
   expense_deleted: "bg-red-100 text-red-800",
   store_item_removed: "bg-red-100 text-red-800",
+  store_location_removed: "bg-red-100 text-red-800",
   gift_removed: "bg-red-100 text-red-800",
   sale_refunded: "bg-red-100 text-red-800",
   sale: "bg-emerald-100 text-emerald-800",

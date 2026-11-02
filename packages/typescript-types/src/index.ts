@@ -215,6 +215,9 @@ export type ActivityAction =
   | "store_item_added"
   | "store_item_updated"
   | "store_item_removed"
+  | "store_location_added"
+  | "store_location_updated"
+  | "store_location_removed"
   | "gift_added"
   | "gift_updated"
   | "gift_removed";
@@ -253,7 +256,23 @@ export type StoreItemStatus =
   | "lost"
   | "disposed";
 
-/** Some of a store item handed to a person, or kept at a place. */
+/** A place store items are kept. */
+export interface StoreLocation {
+  id: string;
+  name: string;
+  /** How many store items have some of their quantity here. */
+  itemCount: number;
+}
+
+/** Some of a store item in one status and place, e.g. 3 in use at the counter. */
+export interface StoreItemLine {
+  quantity: number;
+  status: StoreItemStatus;
+  locationId?: string;
+  locationName?: string;
+}
+
+/** Some of a store item handed to a person. */
 export interface StoreItemAssignment {
   assignedTo: string;
   quantity: number;
@@ -275,9 +294,10 @@ export interface StoreItem {
   /** Saved with the item, so it stays readable if the supplier is removed. */
   supplierName?: string;
   serialNumber?: string;
-  /** Who has how many; the rest of `quantity` is still with the store. */
+  /** Who has how many; nobody has the rest of `quantity`. */
   assignments: StoreItemAssignment[];
-  status: StoreItemStatus;
+  /** How `quantity` splits up by status and location; these add up to it. */
+  lines: StoreItemLine[];
   notes?: string;
   createdAt: string;
 }

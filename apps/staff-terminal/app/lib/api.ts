@@ -11,6 +11,7 @@ import type {
   Product,
   ProductVariant,
   StoreItem,
+  StoreLocation,
   StoreRequest,
   Supplier,
   UserSummary,
@@ -152,6 +153,12 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
 export async function fetchStoreItems(): Promise<StoreItem[]> {
   const res = await apiFetch("/store-items");
   if (!res.ok) throw new Error("Store items request failed");
+  return res.json();
+}
+
+export async function fetchStoreLocations(): Promise<StoreLocation[]> {
+  const res = await apiFetch("/store-locations");
+  if (!res.ok) throw new Error("Store locations request failed");
   return res.json();
 }
 

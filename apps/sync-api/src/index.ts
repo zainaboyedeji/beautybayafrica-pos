@@ -31,7 +31,9 @@ import type {
   Seller,
   StoreItem,
   StoreItemAssignment,
+  StoreItemLine,
   StoreItemStatus,
+  StoreLocation,
   StoreRequest,
   Supplier,
   UserSummary,
@@ -2473,10 +2475,10 @@ type StoreItemRow = {
   supplier_id: string | null;
   supplier_name: string | null;
   serial_number: string | null;
-  status: StoreItemStatus;
   notes: string | null;
   created_at: Date;
   assignments: StoreItemAssignment[];
+  lines: StoreItemLine[];
 };
 
 const toStoreItem = (row: StoreItemRow): StoreItem => ({
@@ -2491,12 +2493,14 @@ const toStoreItem = (row: StoreItemRow): StoreItem => ({
   ...(row.supplier_name !== null ? { supplierName: row.supplier_name } : {}),
   ...(row.serial_number !== null ? { serialNumber: row.serial_number } : {}),
   assignments: row.assignments,
-  status: row.status,
+  lines: row.lines,
   ...(row.notes !== null ? { notes: row.notes } : {}),
   createdAt: row.created_at.toISOString(),
 });
 
 const STORE_ITEM_STATUSES = ["in_use", "in_storage", "under_repair", "lost", "disposed"];
+
+type StoreItemLineInput = { quantity: number; status: StoreItemStatus; locationId: string | null };
 
 type StoreItemInput = {
   name: string;
@@ -2508,7 +2512,7 @@ type StoreItemInput = {
   supplierName: string | null;
   serialNumber: string | null;
   assignments: StoreItemAssignment[];
-  status: StoreItemStatus;
+  lines: StoreItemLineInput[];
   notes: string | null;
 };
 
@@ -2538,12 +2542,50 @@ const readAssignments = (raw: unknown, quantity: number): StoreItemAssignment[] 
   return list;
 };
 
-/** "Tolu 2, Bisi 2, 1 in store". */
+/**
+ * Reads how the quantity splits up by status and location. Rows that are the
+ * same are added together, and together they must make up the whole quantity.
+ */
+const readLines = async (raw: unknown, quantity: number): Promise<StoreItemLineInput[] | string> => {
+  if (!Array.isArray(raw) || raw.length === 0) return "Choose a status for the item";
+  const byKind = new Map<string, StoreItemLineInput>();
+  for (const row of raw) {
+    const count = Number(row?.quantity);
+    const status = String(row?.status ?? "");
+    const locationId = optionalText(row?.locationId);
+    if (!Number.isInteger(count) || count < 1) return "Each row's quantity must be a whole number of 1 or more";
+    if (!STORE_ITEM_STATUSES.includes(status)) return "Unknown status";
+    const key = JSON.stringify([status, locationId]);
+    const existing = byKind.get(key);
+    if (existing) existing.quantity += count;
+    else byKind.set(key, { quantity: count, status: status as StoreItemStatus, locationId });
+  }
+  const list = [...byKind.values()];
+  const total = list.reduce((sum, l) => sum + l.quantity, 0);
+  if (total !== quantity) return `The rows add up to ${total}, but the quantity is ${quantity}`;
+  const ids = list.flatMap((l) => (l.locationId ? [l.locationId] : []));
+  const found = await db.query<{ id: string }>("SELECT id FROM store_locations WHERE id = ANY($1)", [ids]);
+  if (found.rows.length < new Set(ids).size) return "One of those locations no longer exists";
+  return list;
+};
+
+/** "3 in use at Front counter, 1 in storage". */
+const describeLines = (quantity: number, lines: StoreItemLine[]) =>
+  lines
+    .map(
+      (l) =>
+        (quantity > 1 ? `${l.quantity} ` : "") +
+        l.status.replace("_", " ") +
+        (l.locationName ? ` at ${l.locationName}` : ""),
+    )
+    .join(", ");
+
+/** "Tolu 2, Bisi 2, 1 not assigned". */
 const describeAssignments = (quantity: number, assignments: StoreItemAssignment[]) => {
-  const inStore = quantity - assignments.reduce((sum, a) => sum + a.quantity, 0);
+  const left = quantity - assignments.reduce((sum, a) => sum + a.quantity, 0);
   return [
     ...assignments.map((a) => (quantity > 1 ? `${a.assignedTo} ${a.quantity}` : a.assignedTo)),
-    ...(inStore > 0 && assignments.length > 0 ? [`${inStore} in store`] : []),
+    ...(left > 0 && assignments.length > 0 ? [`${left} not assigned`] : []),
   ].join(", ");
 };
 
@@ -2556,16 +2598,16 @@ const readStoreItem = async (body: any): Promise<StoreItemInput | string> => {
   const unitCost =
     rawCost === undefined || rawCost === null || rawCost === "" ? null : Number(rawCost);
   const boughtOn = optionalText(body?.boughtOn);
-  const status = String(body?.status ?? "in_use");
   const supplierId = optionalText(body?.supplierId);
   if (!name || !category) return "Item name and category are required";
   if (!Number.isInteger(quantity) || quantity < 1) return "Quantity must be a whole number of 1 or more";
   if (unitCost !== null && !(unitCost >= 0)) return "Cost must be a valid number";
   if (boughtOn !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(boughtOn) || Number.isNaN(new Date(boughtOn).getTime())))
     return "Choose a valid purchase date";
-  if (!STORE_ITEM_STATUSES.includes(status)) return "Unknown status";
   const assignments = readAssignments(body?.assignments, quantity);
   if (typeof assignments === "string") return assignments;
+  const lines = await readLines(body?.lines, quantity);
+  if (typeof lines === "string") return lines;
   let supplierName: string | null = null;
   if (supplierId) {
     const found = await db.query<{ name: string }>("SELECT name FROM suppliers WHERE id = $1", [supplierId]);
@@ -2582,7 +2624,7 @@ const readStoreItem = async (body: any): Promise<StoreItemInput | string> => {
     supplierName,
     serialNumber: optionalText(body?.serialNumber),
     assignments,
-    status: status as StoreItemStatus,
+    lines,
     notes: optionalText(body?.notes),
   };
 };
@@ -2596,14 +2638,13 @@ const storeItemValues = (item: StoreItemInput) => [
   item.supplierId,
   item.supplierName,
   item.serialNumber,
-  item.status,
   item.notes,
 ];
 
 const describeItem = (item: { tag: string; name: string; quantity: number }) =>
   `${item.tag} ${item.quantity > 1 ? `${item.quantity} × ${item.name}` : item.name}`;
 
-// Items with their assignments, in code order (BBA-0001, BBA-0002…) like a
+// Items with their assignments and lines, in code order (BBA-0001, BBA-0002…) like a
 // register. `id` limits it to one item.
 const fetchStoreItems = async (client: PoolClient | typeof db, id?: string) =>
   (
@@ -2611,7 +2652,15 @@ const fetchStoreItems = async (client: PoolClient | typeof db, id?: string) =>
       `SELECT s.*, COALESCE((
          SELECT json_agg(json_build_object('assignedTo', a.assigned_to, 'quantity', a.quantity)
                          ORDER BY a.line)
-         FROM store_item_assignments a WHERE a.item_id = s.id), '[]') AS assignments
+         FROM store_item_assignments a WHERE a.item_id = s.id), '[]') AS assignments,
+       COALESCE((
+         SELECT json_agg(json_strip_nulls(json_build_object('quantity', g.quantity, 'status', g.status,
+                           'locationId', g.location_id, 'locationName', g.name)) ORDER BY g.line)
+         -- Grouped because removing a location can leave two rows the same.
+         FROM (SELECT min(l.line) AS line, sum(l.quantity)::int AS quantity, l.status, l.location_id, loc.name
+               FROM store_item_lines l LEFT JOIN store_locations loc ON loc.id = l.location_id
+               WHERE l.item_id = s.id
+               GROUP BY l.status, l.location_id, loc.name) g), '[]') AS lines
        FROM store_items s WHERE $1::text IS NULL OR s.id = $1
        ORDER BY s.created_at`,
       [id ?? null],
@@ -2629,6 +2678,16 @@ const saveAssignments = async (
       `INSERT INTO store_item_assignments (item_id, line, assigned_to, quantity)
        VALUES ($1, $2, $3, $4)`,
       [itemId, line, a.assignedTo, a.quantity],
+    );
+};
+
+const saveLines = async (client: PoolClient, itemId: string, lines: StoreItemLineInput[]) => {
+  await client.query("DELETE FROM store_item_lines WHERE item_id = $1", [itemId]);
+  for (const [line, l] of lines.entries())
+    await client.query(
+      `INSERT INTO store_item_lines (item_id, line, quantity, status, location_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [itemId, line, l.quantity, l.status, l.locationId],
     );
 };
 
@@ -2660,11 +2719,12 @@ app.post("/store-items", adminOnly, async (req, res) => {
   const saved = await transaction(async (client) => {
     const { rows } = await client.query<StoreItemRow>(
       `INSERT INTO store_items (id, name, category, quantity, unit_cost, bought_on,
-         supplier_id, supplier_name, serial_number, status, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+         supplier_id, supplier_name, serial_number, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [randomUUID(), ...storeItemValues(item)],
     );
     await saveAssignments(client, rows[0].id, item.assignments);
+    await saveLines(client, rows[0].id, item.lines);
     if (recordExpense) {
       await client.query(
         `INSERT INTO expenses (id, spent_on, description, category, amount,
@@ -2688,7 +2748,7 @@ app.post("/store-items", adminOnly, async (req, res) => {
   await logBy(
     res,
     "store_item_added",
-    `Added ${describeItem(saved)} (${item.category})` +
+    `Added ${describeItem(saved)} (${item.category}), ${describeLines(saved.quantity, saved.lines)}` +
       (handedTo ? `: ${handedTo}` : "") +
       (recordExpense ? `, recorded ${naira.format(total)} as an expense` : ""),
   );
@@ -2706,19 +2766,20 @@ app.put("/store-items/:id", adminOnly, async (req, res) => {
     const { rowCount } = await client.query(
       `UPDATE store_items SET name = $2, category = $3, quantity = $4, unit_cost = $5,
          bought_on = $6, supplier_id = $7, supplier_name = $8, serial_number = $9,
-         status = $10, notes = $11, updated_at = now()
+         notes = $10, updated_at = now()
        WHERE id = $1`,
       [id, ...storeItemValues(item)],
     );
     if (!rowCount) throw new HttpError(404, "Item not found");
     await saveAssignments(client, id, item.assignments);
+    await saveLines(client, id, item.lines);
     return (await fetchStoreItems(client, id))[0];
   });
   const handedTo = describeAssignments(item.quantity, item.assignments);
   await logBy(
     res,
     "store_item_updated",
-    `Updated ${describeItem(saved)} (${item.status.replace("_", " ")})` +
+    `Updated ${describeItem(saved)} (${describeLines(saved.quantity, saved.lines)})` +
       (handedTo ? `: ${handedTo}` : ""),
   );
   res.json(toStoreItem(saved));
@@ -2734,6 +2795,79 @@ app.delete("/store-items/:id", adminOnly, async (req, res) => {
     return;
   }
   await logBy(res, "store_item_removed", `Removed ${describeItem(rows[0])}`);
+  res.sendStatus(204);
+});
+
+// --- Store locations (where store items are kept) ---------------------------
+
+const toStoreLocation = (row: { id: string; name: string; item_count: number }): StoreLocation => ({
+  id: row.id,
+  name: row.name,
+  itemCount: row.item_count,
+});
+
+const fetchStoreLocations = async (id?: string) =>
+  (
+    await db.query<{ id: string; name: string; item_count: number }>(
+      `SELECT l.id, l.name,
+         (SELECT count(DISTINCT i.item_id)::int FROM store_item_lines i WHERE i.location_id = l.id) AS item_count
+       FROM store_locations l WHERE $1::text IS NULL OR l.id = $1
+       ORDER BY lower(l.name)`,
+      [id ?? null],
+    )
+  ).rows;
+
+/** Checks a location's name. Returns the name, or throws when it can't be used. */
+const readLocationName = async (body: any, ownId: string | null) => {
+  const name = String(body?.name ?? "").trim();
+  if (!name) throw new HttpError(400, "Enter the location's name");
+  const { rows } = await db.query(
+    "SELECT 1 FROM store_locations WHERE lower(name) = lower($1) AND id IS DISTINCT FROM $2",
+    [name, ownId],
+  );
+  if (rows[0]) throw new HttpError(409, `There is already a location called ${name}`);
+  return name;
+};
+
+app.get("/store-locations", adminOnly, async (_req, res) => {
+  res.json((await fetchStoreLocations()).map(toStoreLocation));
+});
+
+app.post("/store-locations", adminOnly, async (req, res) => {
+  const name = await readLocationName(req.body, null);
+  const id = randomUUID();
+  await db.query("INSERT INTO store_locations (id, name) VALUES ($1, $2)", [id, name]);
+  await logBy(res, "store_location_added", `Added store location ${name}`);
+  res.status(201).json(toStoreLocation((await fetchStoreLocations(id))[0]));
+});
+
+app.put("/store-locations/:id", adminOnly, async (req, res) => {
+  const id = String(req.params.id);
+  const name = await readLocationName(req.body, id);
+  const { rows } = await db.query<{ old_name: string }>(
+    `UPDATE store_locations l SET name = $2 FROM store_locations old
+     WHERE l.id = $1 AND old.id = l.id RETURNING old.name AS old_name`,
+    [id, name],
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: "Location not found" });
+    return;
+  }
+  await logBy(res, "store_location_updated", `Renamed store location ${rows[0].old_name} to ${name}`);
+  res.json(toStoreLocation((await fetchStoreLocations(id))[0]));
+});
+
+// Items that were there stay on the list, with no location.
+app.delete("/store-locations/:id", adminOnly, async (req, res) => {
+  const { rows } = await db.query<{ name: string }>(
+    "DELETE FROM store_locations WHERE id = $1 RETURNING name",
+    [req.params.id],
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: "Location not found" });
+    return;
+  }
+  await logBy(res, "store_location_removed", `Removed store location ${rows[0].name}`);
   res.sendStatus(204);
 });
 
