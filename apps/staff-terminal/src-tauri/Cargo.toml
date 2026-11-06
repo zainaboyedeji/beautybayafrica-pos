@@ -24,3 +24,14 @@ log = "0.4"
 tauri = { version = "2.12.3", features = [] }
 tauri-plugin-log = "2"
 serialport = { version = "4.7", default-features = false }
+
+# Printing a receipt on a Mac at the receipt's own paper size.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSGeometry", "NSObject"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-app-kit", "WKWebView"] }
+
+# Sending receipts to a printer installed in Windows, bypassing its driver's
+# page size.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Printing"] }

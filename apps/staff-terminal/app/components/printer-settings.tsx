@@ -27,7 +27,8 @@ export const useDesktopApp = () =>
 
 /**
  * Picks the receipt printer this computer prints to directly: a Bluetooth
- * printer paired in the computer's settings, or a USB one. Without one,
+ * printer paired in the computer's settings, a USB one, or on Windows one
+ * installed with its driver. Without one,
  * receipts go through the normal print window.
  */
 export default function PrinterSettings({ onClose }: { onClose: () => void }) {
@@ -100,7 +101,10 @@ export default function PrinterSettings({ onClose }: { onClose: () => void }) {
         <div className="space-y-4 text-sm">
           <p className="text-muted">
             First pair the printer in the computer&apos;s Bluetooth settings
-            (PIN 0000 or 1234), or plug it in by USB. Then choose it here.
+            (PIN 0000 or 1234), or plug it in by USB. Then choose it here. On
+            Windows, a printer installed with its driver is listed as an
+            &quot;installed printer&quot;: choose it so receipts stop at their
+            end instead of feeding a whole page.
           </p>
           <label className="block font-medium">
             Printer

@@ -69,12 +69,16 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "log",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "serde",
  "serde_json",
  "serialport",
  "tauri",
  "tauri-build",
  "tauri-plugin-log",
+ "windows",
 ]
 
 [[package]]

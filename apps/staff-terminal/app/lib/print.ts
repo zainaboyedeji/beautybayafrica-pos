@@ -5,10 +5,11 @@ import { receiptCommands, testCommands, type PrintFormat } from "./escpos";
 /**
  * Makes the printed page as long as the <Receipt>. Otherwise the printer
  * uses its driver's paper size and feeds a long blank strip after it.
+ * Returns the page size in mm, for the desktop app.
  */
 function fitPageToReceipt() {
   const receipt = document.querySelector<HTMLElement>("[data-receipt]");
-  if (!receipt) return;
+  if (!receipt) return null;
   // It is hidden on screen; show it out of sight to measure it.
   const style = receipt.style.cssText;
   receipt.style.cssText += ";display:block;position:absolute;visibility:hidden";
@@ -19,16 +20,19 @@ function fitPageToReceipt() {
   const page =
     document.getElementById("receipt-page") ?? document.createElement("style");
   page.id = "receipt-page";
-  page.textContent = `@page { size: ${mm(width) + 8}mm ${mm(height) + 10}mm; margin: 0; }`;
+  const size = { width: mm(width) + 8, height: mm(height) + 10 };
+  page.textContent = `@page { size: ${size.width}mm ${size.height}mm; margin: 0; }`;
   document.head.append(page);
+  return size;
 }
 
 /** Opens the print dialog; the desktop app's webview needs Tauri to do it. */
 export async function printPage() {
-  fitPageToReceipt();
+  const size = fitPageToReceipt();
   if (!isTauri()) return window.print();
   try {
-    await invoke("print_receipt");
+    // A Mac ignores the @page size, so the app sets the paper size itself.
+    await invoke("print_receipt", size ?? {});
   } catch {
     window.print();
   }
@@ -74,11 +78,13 @@ const send = (port: string, commands: Uint8Array) =>
   invoke("print_raw", { port, data: Array.from(commands) });
 
 // A Bluetooth printer that has just woken up can miss the first
-// connection, so a failed print is tried once more before giving up.
+// connection, so a print that couldn't connect is tried once more. One
+// that failed part way is not: the printer may have printed it already.
 async function sendToPrinter(port: string, commands: Uint8Array) {
   try {
     await send(port, commands);
-  } catch {
+  } catch (e) {
+    if (!String(e).startsWith("Could not connect")) throw e;
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await send(port, commands);
   }
